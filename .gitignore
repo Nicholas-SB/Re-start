@@ -24,3 +24,6 @@ local.properties
 *.aac
 *.webm
 *.lrc
+
+# ...except the app's own tiny interface sounds (wheel clicks), which it needs to build.
+!app/src/main/res/raw/*.wav
