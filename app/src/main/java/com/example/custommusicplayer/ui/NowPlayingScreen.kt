@@ -23,7 +23,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,6 +48,8 @@ fun NowPlayingScreen(
     songsById: Map<Long, Song>,
     artLoader: AlbumArtLoader,
     lyricsLoader: LyricsLoader,
+    showLyrics: Boolean,
+    onToggleLyrics: () -> Unit,
     onClose: () -> Unit,
     onTogglePlayPause: () -> Unit,
     onSkipNext: () -> Unit,
@@ -58,8 +59,6 @@ fun NowPlayingScreen(
     onCycleRepeat: () -> Unit,
     onQueueItemClick: (queueIndex: Int) -> Unit,
 ) {
-    var showLyrics by rememberSaveable { mutableStateOf(false) }
-
     // Load lyrics only while they're shown; reload when the song changes.
     val lyricsState by produceState<LyricsState>(LyricsState.Loading, song.id, showLyrics) {
         if (!showLyrics) return@produceState
@@ -74,7 +73,7 @@ fun NowPlayingScreen(
                     IconButton(onClick = onClose) {
                         Icon(painterResource(R.drawable.ic_expand_more), contentDescription = "Close", modifier = Modifier.size(32.dp))
                     }
-                    IconButton(onClick = { showLyrics = !showLyrics }) {
+                    IconButton(onClick = onToggleLyrics) {
                         Icon(
                             painterResource(R.drawable.ic_lyrics),
                             contentDescription = if (showLyrics) "Hide lyrics" else "Show lyrics",
@@ -89,7 +88,9 @@ fun NowPlayingScreen(
                     .fillMaxWidth()
                     .padding(horizontal = 32.dp)
                     .aspectRatio(1f)
-                if (showLyrics) {
+                // Show lyrics once they're found. While loading, or if the song has none,
+                // keep showing the cover so the screen never looks empty.
+                if (showLyrics && lyricsState is LyricsState.Found) {
                     LyricsPanel(
                         state = lyricsState,
                         positionMs = positionMs,
@@ -98,6 +99,15 @@ fun NowPlayingScreen(
                     )
                 } else {
                     SongArt(song = song, artLoader = artLoader, sizePx = AlbumArtLoader.LARGE_SIZE_PX, modifier = squareModifier)
+                }
+                if (showLyrics && lyricsState == LyricsState.NotFound) {
+                    Text(
+                        "No lyrics for this song",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    )
                 }
             }
             item {

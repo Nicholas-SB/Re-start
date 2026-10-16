@@ -19,7 +19,8 @@ import kotlin.coroutines.resumeWithException
 
 /**
  * Finds a song's lyrics:
- *  1. a .lrc file with the same name next to the song ("Song.m4a" -> "Song.lrc"), else
+ *  1. a .lrc file with the same name next to the song ("Song.m4a" -> "Song.lrc", or
+ *     "Song.en.lrc" as yt-dlp names them), else
  *  2. lyrics embedded in the song file's tags.
  *
  * No extra permission is needed for .lrc files: Android treats them as subtitle files, which
@@ -33,10 +34,16 @@ class LyricsLoader(private val context: Context) {
             ?: loadEmbedded(song)?.let { LoadedLyrics(it, LyricsSource.EMBEDDED) }
 
     private suspend fun loadLrcFile(song: Song): Lyrics? = withContext(Dispatchers.IO) {
-        val songPath = song.filePath ?: return@withContext null
-        val lrcFile = File(songPath.substringBeforeLast('.') + ".lrc")
+        val songFile = File(song.filePath ?: return@withContext null)
+        val folder = songFile.parentFile ?: return@withContext null
+        val baseName = songFile.nameWithoutExtension  // "Song I am. [Kohn9PRanoY]"
         try {
-            if (lrcFile.isFile) LrcParser.parse(lrcFile.readText()) else null
+            // Exact name first, then names with a language code in between ("Song.en.lrc").
+            val lrcFile = File(folder, "$baseName.lrc").takeIf { it.isFile }
+                ?: folder.listFiles { file ->
+                    file.name.startsWith("$baseName.") && file.name.endsWith(".lrc", ignoreCase = true)
+                }?.minByOrNull { it.name }
+            lrcFile?.let { LrcParser.parse(it.readText()) }
         } catch (e: Exception) {
             null  // unreadable; fall back to embedded lyrics
         }

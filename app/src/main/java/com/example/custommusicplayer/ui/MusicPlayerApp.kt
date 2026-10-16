@@ -60,6 +60,8 @@ fun MusicPlayerApp(
     var tab by rememberSaveable { mutableStateOf(Tab.SONGS) }
     var openPlaylistId by rememberSaveable { mutableStateOf<Long?>(null) }
     var showNowPlaying by rememberSaveable { mutableStateOf(false) }
+    // Lyrics are on by default; the choice is kept while the app is open.
+    var showLyrics by rememberSaveable { mutableStateOf(true) }
 
     // Dialog state. songToAdd != null means "the Add to playlist dialog is open for this song".
     var songToAdd by remember { mutableStateOf<Song?>(null) }
@@ -157,6 +159,8 @@ fun MusicPlayerApp(
                     songsById = songsById,
                     artLoader = libraryViewModel.artLoader,
                     lyricsLoader = libraryViewModel.lyricsLoader,
+                    showLyrics = showLyrics,
+                    onToggleLyrics = { showLyrics = !showLyrics },
                     onClose = { showNowPlaying = false },
                     onTogglePlayPause = playerViewModel::togglePlayPause,
                     onSkipNext = playerViewModel::skipToNext,
