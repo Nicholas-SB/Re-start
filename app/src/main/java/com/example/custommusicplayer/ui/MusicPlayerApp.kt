@@ -24,17 +24,18 @@ fun MusicPlayerApp(
     // Turn each StateFlow into Compose state, so the UI redraws when it changes.
     val songs by libraryViewModel.songs.collectAsStateWithLifecycle()
     val isScanning by libraryViewModel.isScanning.collectAsStateWithLifecycle()
-    val currentSong by playerViewModel.currentSong.collectAsStateWithLifecycle()
+    val currentSongId by playerViewModel.currentSongId.collectAsStateWithLifecycle()
     val isPlaying by playerViewModel.isPlaying.collectAsStateWithLifecycle()
+
+    // The player only knows the song's id; look up the full Song in the library.
+    val currentSong = songs.find { it.id == currentSongId }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         bottomBar = {
-            // Copy to a local val so Kotlin knows it can't turn null between check and use.
-            val song = currentSong
-            if (song != null) {
+            if (currentSong != null) {
                 MiniPlayer(
-                    song = song,
+                    song = currentSong,
                     isPlaying = isPlaying,
                     artLoader = libraryViewModel.artLoader,
                     onTogglePlayPause = playerViewModel::togglePlayPause,  // a function reference
@@ -49,7 +50,7 @@ fun MusicPlayerApp(
             LibraryScreen(
                 songs = songs,
                 isScanning = isScanning,
-                currentSongId = currentSong?.id,
+                currentSongId = currentSongId,
                 artLoader = libraryViewModel.artLoader,
                 onRefresh = libraryViewModel::rescan,
                 onSongClick = playerViewModel::play,
