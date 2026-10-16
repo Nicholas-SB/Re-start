@@ -8,12 +8,16 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
@@ -29,8 +33,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -39,33 +45,69 @@ import com.example.custommusicplayer.ui.AudioPermissionGate
 import com.example.custommusicplayer.ui.LibraryViewModel
 import com.example.custommusicplayer.ui.MusicPlayerApp
 import com.example.custommusicplayer.ui.PlayerViewModel
+import com.example.custommusicplayer.ui.PlaylistViewModel
 import com.example.custommusicplayer.ui.theme.CustomMusicPlayerTheme
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.flowOf
 
 /**
  * Re-start: the whole app as a little music player. A screen on top shows menus and
  * Now Playing; the click wheel below drives everything.
  *
- * This function owns the "what does the wheel do here?" decisions. The screen pieces
- * (MenuPage, DeviceNowPlaying) only draw, and the ClickWheel only reports gestures.
+ * This function owns the "what does the wheel do here?" decisions and the layout.
+ * DeviceMenus decides what each menu lists; MenuPage, DeviceNowPlaying and NameEntryPage
+ * only draw; the ClickWheel only reports gestures.
  */
 @Composable
 fun RestartApp(
     libraryViewModel: LibraryViewModel = viewModel(),
     playerViewModel: PlayerViewModel = viewModel(),
+    playlistViewModel: PlaylistViewModel = viewModel(),
     downloadViewModel: DownloadViewModel = viewModel(),
     navigation: DeviceNavigationViewModel = viewModel(),
 ) {
     val songs by libraryViewModel.songs.collectAsStateWithLifecycle()
     val playerState by playerViewModel.uiState.collectAsStateWithLifecycle()
     val positionMs by playerViewModel.positionMs.collectAsStateWithLifecycle()
+    val playlists by playlistViewModel.playlists.collectAsStateWithLifecycle()
 
     val songsById = remember(songs) { songs.associateBy { it.id } }
+    val songsByFileName = remember(songs) { songs.associateBy { it.fileName } }
     val currentSong = playerState.currentSongId?.let { songsById[it] }
+
+    val page = navigation.currentPage
+
+    // If the current page is about one playlist, load that playlist's songs from the database.
+    val shownPlaylistId: Long? = when (page) {
+        is Page.Playlist -> page.playlistId
+        is Page.PlaylistOptions -> page.playlistId
+        is Page.PlaylistEntryOptions -> page.playlistId
+        is Page.ConfirmDelete -> page.playlistId
+        else -> null
+    }
+    val shownPlaylist by remember(shownPlaylistId) {
+        shownPlaylistId?.let(playlistViewModel::observePlaylist) ?: flowOf(null)
+    }.collectAsStateWithLifecycle(initialValue = null)
 
     // Temporary: the previous (YouTube Music-style) UI, for features not moved over yet.
     var showClassic by rememberSaveable { mutableStateOf(false) }
     var showLyrics by rememberSaveable { mutableStateOf(true) }
+
+    // The text being typed on a NameEntry page.
+    var nameDraft by rememberSaveable { mutableStateOf("") }
+
+    // A short message ("Added to Chill") shown at the bottom of the screen for a moment.
+    var message by remember { mutableStateOf<String?>(null) }
+    var messageTime by remember { mutableLongStateOf(0L) }
+    LaunchedEffect(messageTime) {
+        if (messageTime == 0L) return@LaunchedEffect
+        delay(1_800)
+        message = null
+    }
+    fun showMessage(text: String) {
+        message = text
+        messageTime = SystemClock.uptimeMillis()
+    }
 
     // Volume bar: shown for a moment after each wheel turn on Now Playing.
     val context = LocalContext.current
@@ -87,65 +129,81 @@ fun RestartApp(
 
     // --- What each page shows ---
 
-    val page = navigation.currentPage
-    val entries: List<MenuEntry> = when (page) {
-        Page.MainMenu -> buildList {
-            add(MenuEntry("Music", opensSubmenu = true) { navigation.open(Page.Music) })
-            add(MenuEntry("Shuffle Songs") {
-                playerViewModel.shuffleAll(songs)
-                navigation.open(Page.NowPlaying)
-            })
-            if (currentSong != null) {
-                add(MenuEntry("Now Playing", opensSubmenu = true) { navigation.open(Page.NowPlaying) })
-            }
-            add(MenuEntry("Classic view", detail = "Playlists, mixes, downloads", opensSubmenu = true) { showClassic = true })
+    val menus = DeviceMenus(
+        songs = songs,
+        songsById = songsById,
+        songsByFileName = songsByFileName,
+        currentSong = currentSong,
+        playlists = playlists,
+        shownPlaylist = shownPlaylist,
+        navigation = navigation,
+        player = playerViewModel,
+        playlistActions = playlistViewModel,
+        showMessage = ::showMessage,
+        startNameEntry = { namePage, initialText ->
+            nameDraft = initialText
+            navigation.open(namePage)
+        },
+        openClassicView = { showClassic = true },
+    )
+    val entries = menus.entries(page)
+
+    fun saveName(namePage: Page.NameEntry) {
+        val name = nameDraft.trim()
+        if (name.isEmpty()) return
+        val renameId = namePage.renamePlaylistId
+        if (renameId != null) {
+            playlistViewModel.renamePlaylist(renameId, name)
+            showMessage("Renamed to $name")
+            navigation.back()
+        } else {
+            val firstSong = namePage.firstSongId?.let { songsById[it] }
+            playlistViewModel.createPlaylist(name, firstSong)
+            showMessage(if (firstSong != null) "Added to $name" else "Created $name")
+            navigation.back()                       // leave the name page...
+            if (firstSong != null) navigation.back()  // ...and the "Add to Playlist" page
         }
-        Page.Music -> listOf(
-            MenuEntry("Songs", detail = "${songs.size} ${if (songs.size == 1) "song" else "songs"}", opensSubmenu = true) {
-                navigation.open(Page.Songs)
-            },
-        )
-        Page.Songs -> songs.mapIndexed { index, song ->
-            MenuEntry(song.title, detail = song.artist) {
-                playerViewModel.playQueue(songs, index)
-                navigation.open(Page.NowPlaying)
-            }
-        }
-        Page.NowPlaying -> emptyList()
-    }
-    val title = when (page) {
-        Page.MainMenu -> "Re-start"
-        Page.Music -> "Music"
-        Page.Songs -> "Songs"
-        Page.NowPlaying -> "Now Playing"
     }
 
     // --- What the wheel does on each page ---
 
     // Careful: Compose may keep using the wheel callbacks from an earlier redraw (it decides
     // they "didn't change"). So the callbacks must not rely on values captured now, like
-    // `page` and `entries` above. Instead they read the *current* page and entries when the
-    // wheel actually turns. rememberUpdatedState gives a holder that always has the latest list.
+    // `page` and `entries` above. Instead they read the *current* values when the wheel is
+    // used. rememberUpdatedState gives a holder that always has the latest value.
     val currentEntries by rememberUpdatedState(entries)
+    val latestSong by rememberUpdatedState(currentSong)
 
     fun onRotate(steps: Int) {
-        val page = navigation.currentPage
-        if (page == Page.NowPlaying) {
-            volume.change(steps)
-            volumeFraction = volume.fraction
-            lastVolumeChange = SystemClock.uptimeMillis()
-        } else {
-            val moved = acceleration.apply(steps, SystemClock.uptimeMillis())
-            navigation.moveSelection(page, moved, currentEntries.size)
+        val current = navigation.currentPage
+        when (current) {
+            Page.NowPlaying -> {
+                volume.change(steps)
+                volumeFraction = volume.fraction
+                lastVolumeChange = SystemClock.uptimeMillis()
+            }
+            is Page.NameEntry -> {}  // nothing to scroll
+            else -> {
+                val moved = acceleration.apply(steps, SystemClock.uptimeMillis())
+                navigation.moveSelection(current, moved, currentEntries.size)
+            }
         }
     }
 
     fun onCenter() {
-        val page = navigation.currentPage
-        if (page == Page.NowPlaying) {
-            showLyrics = !showLyrics
-        } else {
-            currentEntries.getOrNull(navigation.selectedIndex(page))?.onSelect?.invoke()
+        when (val current = navigation.currentPage) {
+            Page.NowPlaying -> showLyrics = !showLyrics
+            is Page.NameEntry -> saveName(current)
+            else -> currentEntries.getOrNull(navigation.selectedIndex(current))?.onSelect?.invoke()
+        }
+    }
+
+    /** Holding the center: options for whatever is highlighted (or playing). */
+    fun onCenterHold() {
+        when (val current = navigation.currentPage) {
+            Page.NowPlaying -> latestSong?.let { navigation.open(Page.AddToPlaylist(it.id)) }
+            is Page.NameEntry -> {}
+            else -> currentEntries.getOrNull(navigation.selectedIndex(current))?.onLongPress?.invoke()
         }
     }
 
@@ -154,6 +212,9 @@ fun RestartApp(
 
     StatusBarIcons(darkIcons = !showClassic)
 
+    // While typing, the keyboard takes the wheel's place.
+    val keyboardOpen = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+
     Box(modifier = Modifier.fillMaxSize()) {
         DeviceTheme {
             Column(
@@ -161,6 +222,7 @@ fun RestartApp(
                     .fillMaxSize()
                     .background(Brush.verticalGradient(listOf(DeviceColors.BodyTop, DeviceColors.BodyBottom)))
                     .systemBarsPadding()
+                    .imePadding()
                     .padding(horizontal = 20.dp, vertical = 16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
@@ -175,13 +237,13 @@ fun RestartApp(
                         .border(3.dp, DeviceColors.ScreenFrame, screenShape)
                         .padding(3.dp),  // keep content inside the frame
                 ) {
-                    DeviceHeader(title = title, isPlaying = if (currentSong != null) playerState.isPlaying else null)
+                    DeviceHeader(title = menus.title(page), isPlaying = if (currentSong != null) playerState.isPlaying else null)
                     Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                         AudioPermissionGate(modifier = Modifier.fillMaxSize()) {
                             LaunchedEffect(Unit) { libraryViewModel.loadSongsOnce() }
 
-                            if (page == Page.NowPlaying) {
-                                DeviceNowPlaying(
+                            when (page) {
+                                Page.NowPlaying -> DeviceNowPlaying(
                                     song = currentSong,
                                     state = playerState,
                                     positionMs = positionMs,
@@ -191,32 +253,49 @@ fun RestartApp(
                                     volumeFraction = volumeFraction,
                                     onSeek = playerViewModel::seekTo,
                                 )
-                            } else {
-                                MenuPage(
+                                is Page.NameEntry -> NameEntryPage(
+                                    name = nameDraft,
+                                    onNameChange = { nameDraft = it },
+                                    onSave = { saveName(page) },
+                                    onCancel = { navigation.back() },
+                                )
+                                else -> MenuPage(
                                     entries = entries,
                                     selectedIndex = navigation.selectedIndex(page).coerceAtMost(entries.lastIndex.coerceAtLeast(0)),
                                     onTap = { index ->
                                         navigation.select(page, index)
                                         entries[index].onSelect()
                                     },
-                                    emptyText = if (page == Page.Songs) "No songs yet" else "Nothing here",
+                                    onLongTap = { index ->
+                                        navigation.select(page, index)
+                                        entries[index].onLongPress?.invoke()
+                                    },
+                                    emptyText = when (page) {
+                                        Page.Songs -> "No songs yet"
+                                        is Page.Playlist -> "Loading…"
+                                        else -> "Nothing here"
+                                    },
                                 )
                             }
                         }
+                        MessageBubble(message, Modifier.align(Alignment.BottomCenter))
                     }
                 }
 
-                Spacer(Modifier.height(24.dp))
-                ClickWheel(
-                    onRotate = ::onRotate,
-                    onCenter = ::onCenter,
-                    onMenu = { navigation.back() },
-                    onPrevious = playerViewModel::skipToPrevious,
-                    onNext = playerViewModel::skipToNext,
-                    onPlayPause = playerViewModel::togglePlayPause,
-                    modifier = Modifier.fillMaxWidth(0.8f),
-                )
-                Spacer(Modifier.height(8.dp))
+                if (!keyboardOpen) {
+                    Spacer(Modifier.height(24.dp))
+                    ClickWheel(
+                        onRotate = ::onRotate,
+                        onCenter = ::onCenter,
+                        onCenterHold = ::onCenterHold,
+                        onMenu = { navigation.back() },
+                        onPrevious = playerViewModel::skipToPrevious,
+                        onNext = playerViewModel::skipToNext,
+                        onPlayPause = playerViewModel::togglePlayPause,
+                        modifier = Modifier.fillMaxWidth(0.8f),
+                    )
+                    Spacer(Modifier.height(8.dp))
+                }
             }
         }
 
@@ -227,6 +306,22 @@ fun RestartApp(
             CustomMusicPlayerTheme { MusicPlayerApp() }
         }
     }
+}
+
+/** A small mocha pill with a short confirmation, e.g. "Added to Chill". */
+@Composable
+private fun MessageBubble(text: String?, modifier: Modifier = Modifier) {
+    if (text == null) return
+    Text(
+        text,
+        color = DeviceColors.Screen,
+        fontSize = 14.sp,
+        modifier = modifier
+            .padding(12.dp)
+            .clip(RoundedCornerShape(50))
+            .background(DeviceColors.ScreenFrame)
+            .padding(horizontal = 14.dp, vertical = 6.dp),
+    )
 }
 
 /**

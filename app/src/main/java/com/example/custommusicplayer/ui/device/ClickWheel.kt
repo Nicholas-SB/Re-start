@@ -3,7 +3,7 @@ package com.example.custommusicplayer.ui.device
 import android.view.HapticFeedbackConstants
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
@@ -35,7 +35,8 @@ import kotlin.math.hypot
 
 /**
  * The click wheel. Slide a finger around the ring to scroll (each step gives a little haptic
- * tick); tap MENU / ⏮ / ⏭ / ⏯ on the ring; press the center button to select.
+ * tick); tap MENU / ⏮ / ⏭ / ⏯ on the ring; press the center button to select, or hold it
+ * for options.
  *
  * Like the other UI pieces, it doesn't decide what anything *does*: it just reports
  * what happened through the callbacks.
@@ -44,6 +45,7 @@ import kotlin.math.hypot
 fun ClickWheel(
     onRotate: (steps: Int) -> Unit,
     onCenter: () -> Unit,
+    onCenterHold: () -> Unit,
     onMenu: () -> Unit,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
@@ -136,10 +138,16 @@ fun ClickWheel(
                 .clip(CircleShape)
                 .background(Brush.verticalGradient(listOf(DeviceColors.CenterTop, DeviceColors.CenterBottom)))
                 .border(1.dp, DeviceColors.WheelEdge, CircleShape)
-                .clickable {
-                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                    onCenter()
-                },
+                .combinedClickable(
+                    onClick = {
+                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                        onCenter()
+                    },
+                    onLongClick = {
+                        view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                        onCenterHold()
+                    },
+                ),
         )
     }
 }

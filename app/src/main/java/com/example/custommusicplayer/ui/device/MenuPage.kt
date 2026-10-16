@@ -1,7 +1,7 @@
 package com.example.custommusicplayer.ui.device
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -27,11 +27,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.custommusicplayer.R
 
-/** One row in a menu. [opensSubmenu] shows a "›" like the iPod did for rows that lead deeper. */
+/**
+ * One row in a menu. [opensSubmenu] shows a "›" like the iPod did for rows that lead deeper.
+ * [onLongPress] runs when you hold the center button (or long-press the row): options.
+ */
 data class MenuEntry(
     val label: String,
     val detail: String? = null,
     val opensSubmenu: Boolean = false,
+    val onLongPress: (() -> Unit)? = null,
     val onSelect: () -> Unit,
 )
 
@@ -75,6 +79,7 @@ fun MenuPage(
     entries: List<MenuEntry>,
     selectedIndex: Int,
     onTap: (index: Int) -> Unit,
+    onLongTap: (index: Int) -> Unit,
     modifier: Modifier = Modifier,
     emptyText: String = "Nothing here",
 ) {
@@ -100,13 +105,18 @@ fun MenuPage(
 
     LazyColumn(state = listState, modifier = modifier.fillMaxSize()) {
         itemsIndexed(entries) { index, entry ->
-            MenuRow(entry = entry, isSelected = index == selectedIndex, onClick = { onTap(index) })
+            MenuRow(
+                entry = entry,
+                isSelected = index == selectedIndex,
+                onClick = { onTap(index) },
+                onLongClick = { onLongTap(index) },
+            )
         }
     }
 }
 
 @Composable
-private fun MenuRow(entry: MenuEntry, isSelected: Boolean, onClick: () -> Unit) {
+private fun MenuRow(entry: MenuEntry, isSelected: Boolean, onClick: () -> Unit, onLongClick: () -> Unit) {
     val background = if (isSelected) {
         Brush.verticalGradient(listOf(DeviceColors.Highlight, DeviceColors.HighlightDark))
     } else {
@@ -116,7 +126,8 @@ private fun MenuRow(entry: MenuEntry, isSelected: Boolean, onClick: () -> Unit) 
         modifier = Modifier
             .fillMaxWidth()
             .background(background)
-            .clickable(onClick = onClick)
+            // combinedClickable = clickable plus long-press (and double-tap, unused here).
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
