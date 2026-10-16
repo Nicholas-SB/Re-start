@@ -4,15 +4,21 @@ import android.app.Application
 import android.content.ComponentName
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import androidx.media3.common.C
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.example.custommusicplayer.data.Song
 import com.example.custommusicplayer.playback.PlaybackService
 import com.example.custommusicplayer.playback.toMediaItem
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlin.random.Random
 
 /**
  * The UI's remote control for PlaybackService.
@@ -23,12 +29,12 @@ import kotlinx.coroutines.flow.asStateFlow
  */
 class PlayerViewModel(application: Application) : AndroidViewModel(application) {
 
-    // Id of the song that's loaded in the player (playing or paused), or null.
-    private val _currentSongId = MutableStateFlow<Long?>(null)
-    val currentSongId: StateFlow<Long?> = _currentSongId.asStateFlow()
+    private val _uiState = MutableStateFlow(PlayerUiState())
+    val uiState: StateFlow<PlayerUiState> = _uiState.asStateFlow()
 
-    private val _isPlaying = MutableStateFlow(false)
-    val isPlaying: StateFlow<Boolean> = _isPlaying.asStateFlow()
+    // Kept separate from uiState because it changes twice a second while playing.
+    private val _positionMs = MutableStateFlow(0L)
+    val positionMs: StateFlow<Long> = _positionMs.asStateFlow()
 
     // Null until the connection to the service is ready.
     private var controller: MediaController? = null
@@ -58,31 +64,109 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             },
             ContextCompat.getMainExecutor(application),  // run the callback on the UI thread
         )
+
+        // The player doesn't send an event every time the position moves, so we ask for it.
+        viewModelScope.launch {
+            while (isActive) {
+                controller?.let { _positionMs.value = it.currentPosition }
+                delay(500)
+            }
+        }
     }
 
     private fun updateState(player: Player) {
-        _isPlaying.value = player.isPlaying
-        _currentSongId.value = player.currentMediaItem?.mediaId?.toLongOrNull()
+        _uiState.value = PlayerUiState(
+            currentSongId = player.currentMediaItem?.mediaId?.toLongOrNull(),
+            isPlaying = player.isPlaying,
+            shuffleEnabled = player.shuffleModeEnabled,
+            repeatMode = when (player.repeatMode) {
+                Player.REPEAT_MODE_ALL -> RepeatMode.ALL
+                Player.REPEAT_MODE_ONE -> RepeatMode.ONE
+                else -> RepeatMode.OFF
+            },
+            upNext = buildUpNext(player),
+        )
+        _positionMs.value = player.currentPosition
     }
 
-    fun play(song: Song) {
+    /**
+     * Lists the songs after the current one in the order they'll actually play.
+     * The player's "timeline" knows the next index, taking shuffle into account.
+     */
+    private fun buildUpNext(player: Player): List<QueueEntry> {
+        val timeline = player.currentTimeline
+        if (timeline.isEmpty) return emptyList()
+
+        val upNext = mutableListOf<QueueEntry>()
+        var index = timeline.getNextWindowIndex(player.currentMediaItemIndex, Player.REPEAT_MODE_OFF, player.shuffleModeEnabled)
+        while (index != C.INDEX_UNSET) {
+            val songId = player.getMediaItemAt(index).mediaId.toLongOrNull()
+            if (songId != null) upNext += QueueEntry(index, songId)
+            index = timeline.getNextWindowIndex(index, Player.REPEAT_MODE_OFF, player.shuffleModeEnabled)
+        }
+        return upNext
+    }
+
+    /** Replaces the queue with [songs] and starts playing the one at [startIndex]. */
+    fun playQueue(songs: List<Song>, startIndex: Int) {
         // `?: return`: if we aren't connected yet, ignore the tap.
         val player = controller ?: return
-        player.setMediaItem(song.toMediaItem())
+        player.setMediaItems(songs.map { it.toMediaItem() }, startIndex, /* startPositionMs = */ 0)
         player.prepare()
         player.play()
+    }
+
+    /** Turns shuffle on and plays [songs] starting from a random one. */
+    fun shuffleAll(songs: List<Song>) {
+        if (songs.isEmpty()) return
+        controller?.shuffleModeEnabled = true
+        playQueue(songs, Random.nextInt(songs.size))
     }
 
     fun togglePlayPause() {
         val player = controller ?: return
         when {
             player.isPlaying -> player.pause()
-            // The song finished: start it over instead of doing nothing.
+            // The queue finished: start the current song over instead of doing nothing.
             player.playbackState == Player.STATE_ENDED -> {
                 player.seekTo(0)
                 player.play()
             }
             else -> player.play()
+        }
+    }
+
+    fun skipToNext() {
+        controller?.seekToNext()
+    }
+
+    /** Like most players: restarts the song if you're a few seconds in, otherwise goes back. */
+    fun skipToPrevious() {
+        controller?.seekToPrevious()
+    }
+
+    /** Jumps to a song in the queue (from the "Up next" list). */
+    fun skipToQueueItem(queueIndex: Int) {
+        controller?.seekTo(queueIndex, 0)
+    }
+
+    fun seekTo(positionMs: Long) {
+        controller?.seekTo(positionMs)
+        _positionMs.value = positionMs
+    }
+
+    fun toggleShuffle() {
+        // Kotlin turns getShuffleModeEnabled()/setShuffleModeEnabled() into a property.
+        val player = controller ?: return
+        player.shuffleModeEnabled = !player.shuffleModeEnabled
+    }
+
+    fun cycleRepeatMode() {
+        val player = controller ?: return
+        player.repeatMode = when (_uiState.value.repeatMode.next()) {
+            RepeatMode.OFF -> Player.REPEAT_MODE_OFF
+            RepeatMode.ALL -> Player.REPEAT_MODE_ALL
+            RepeatMode.ONE -> Player.REPEAT_MODE_ONE
         }
     }
 

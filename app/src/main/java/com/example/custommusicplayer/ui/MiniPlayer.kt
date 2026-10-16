@@ -22,25 +22,27 @@ import com.example.custommusicplayer.R
 import com.example.custommusicplayer.data.AlbumArtLoader
 import com.example.custommusicplayer.data.Song
 
-/** The bar at the bottom showing what's playing, with a play/pause button. */
+/** The bar at the bottom showing what's playing. Tap it to open the Now Playing screen. */
 @Composable
 fun MiniPlayer(
     song: Song,
     isPlaying: Boolean,
     artLoader: AlbumArtLoader,
+    onClick: () -> Unit,
     onTogglePlayPause: () -> Unit,
+    onSkipNext: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Surface(tonalElevation = 3.dp, modifier = modifier.fillMaxWidth()) {
+    Surface(onClick = onClick, tonalElevation = 3.dp, modifier = modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
                 .navigationBarsPadding()  // stay above the system gesture bar
                 .padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             SongArt(song, artLoader, Modifier.size(48.dp))
-            Column(modifier = Modifier.weight(1f)) {
+            Column(modifier = Modifier.weight(1f).padding(start = 4.dp)) {
                 Text(song.title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(
                     song.artist,
@@ -56,6 +58,9 @@ fun MiniPlayer(
                     contentDescription = if (isPlaying) "Pause" else "Play",
                     modifier = Modifier.size(32.dp),
                 )
+            }
+            IconButton(onClick = onSkipNext) {
+                Icon(painterResource(R.drawable.ic_skip_next), contentDescription = "Next", modifier = Modifier.size(28.dp))
             }
         }
     }

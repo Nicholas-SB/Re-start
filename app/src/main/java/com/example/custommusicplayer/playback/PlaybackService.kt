@@ -4,6 +4,9 @@ import android.app.PendingIntent
 import android.content.Intent
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
@@ -24,10 +27,34 @@ class PlaybackService : MediaSessionService() {
     // `?` because it only exists between onCreate() and onDestroy().
     private var mediaSession: MediaSession? = null
 
+    // `lateinit`: assigned in onCreate() rather than in the constructor, but never null after.
+    private lateinit var player: ExoPlayer
+
+    /**
+     * Makes a fresh Fisher-Yates shuffle (current song first) whenever shuffle is turned on
+     * or a new queue starts playing while shuffle is on.
+     */
+    private val reshuffleListener = object : Player.Listener {
+        override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
+            if (shuffleModeEnabled) reshuffle()
+        }
+
+        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED && player.shuffleModeEnabled) {
+                reshuffle()
+            }
+        }
+    }
+
+    @OptIn(UnstableApi::class)
+    private fun reshuffle() {
+        player.setShuffleOrder(FisherYatesShuffleOrder(player.mediaItemCount, player.currentMediaItemIndex))
+    }
+
     override fun onCreate() {
         super.onCreate()
 
-        val player = ExoPlayer.Builder(this)
+        player = ExoPlayer.Builder(this)
             // Tell Android this is music, and let ExoPlayer manage "audio focus":
             // it pauses for phone calls, ducks or pauses when another app plays audio,
             // and resumes after a short interruption (like a call) ends.
@@ -43,6 +70,7 @@ class PlaybackService : MediaSessionService() {
             // Keep the CPU awake while playing with the screen off.
             .setWakeMode(C.WAKE_MODE_LOCAL)
             .build()
+        player.addListener(reshuffleListener)
 
         mediaSession = MediaSession.Builder(this, player)
             .setSessionActivity(openAppIntent())
@@ -54,18 +82,15 @@ class PlaybackService : MediaSessionService() {
 
     /** The user swiped the app away from Recents: keep playing music, but quit if paused. */
     override fun onTaskRemoved(rootIntent: Intent?) {
-        val player = mediaSession?.player
-        if (player == null || !player.playWhenReady || player.mediaItemCount == 0) {
+        if (!player.playWhenReady || player.mediaItemCount == 0) {
             stopSelf()
         }
     }
 
     override fun onDestroy() {
-        // `run { }` executes the block with mediaSession as `this`, only if it isn't null.
-        mediaSession?.run {
-            player.release()
-            release()
-        }
+        player.removeListener(reshuffleListener)
+        player.release()
+        mediaSession?.release()
         mediaSession = null
         super.onDestroy()
     }

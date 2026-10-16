@@ -1,26 +1,27 @@
 package com.example.custommusicplayer.ui
 
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import com.example.custommusicplayer.R
 import com.example.custommusicplayer.data.AlbumArtLoader
 import com.example.custommusicplayer.data.Song
 
@@ -38,7 +39,8 @@ fun LibraryScreen(
     currentSongId: Long?,
     artLoader: AlbumArtLoader,
     onRefresh: () -> Unit,
-    onSongClick: (Song) -> Unit,
+    onSongClick: (index: Int) -> Unit,
+    onShuffleAll: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     PullToRefreshBox(
@@ -54,19 +56,15 @@ fun LibraryScreen(
         // LazyColumn is like Android's RecyclerView: it only builds rows that are on screen.
         LazyColumn(modifier = Modifier.fillMaxSize()) {
             item {
-                Text(
-                    text = "Library · ${songs.size} ${if (songs.size == 1) "song" else "songs"}",
-                    style = MaterialTheme.typography.headlineMedium,
-                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp),
-                )
+                LibraryHeader(songCount = songs.size, onShuffleAll = onShuffleAll)
             }
             // `key` lets Compose keep track of rows when the list changes.
-            items(songs, key = { it.id }) { song ->
+            itemsIndexed(songs, key = { _, song -> song.id }) { index, song ->
                 SongRow(
                     song = song,
-                    isCurrent = song.id == currentSongId,
                     artLoader = artLoader,
-                    onClick = { onSongClick(song) },
+                    onClick = { onSongClick(index) },
+                    isCurrent = song.id == currentSongId,
                 )
             }
         }
@@ -74,37 +72,22 @@ fun LibraryScreen(
 }
 
 @Composable
-private fun SongRow(
-    song: Song,
-    isCurrent: Boolean,
-    artLoader: AlbumArtLoader,
-    onClick: () -> Unit,
-) {
+private fun LibraryHeader(songCount: Int, onShuffleAll: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        SongArt(song, artLoader, Modifier.size(52.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = song.title,
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
-                color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = "${song.artist} · ${formatDuration(song.durationMs)}",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+        Text(
+            text = "Library · $songCount ${if (songCount == 1) "song" else "songs"}",
+            style = MaterialTheme.typography.headlineSmall,
+            modifier = Modifier.weight(1f),
+        )
+        FilledTonalButton(onClick = onShuffleAll) {
+            Icon(painterResource(R.drawable.ic_shuffle), contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Shuffle all")
         }
     }
 }
@@ -117,10 +100,4 @@ private fun EmptyLibraryMessage() {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
-}
-
-/** 225000 ms -> "3:45" */
-private fun formatDuration(ms: Long): String {
-    val totalSeconds = ms / 1000
-    return "%d:%02d".format(totalSeconds / 60, totalSeconds % 60)
 }

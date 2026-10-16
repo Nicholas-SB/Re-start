@@ -5,7 +5,6 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -25,16 +24,21 @@ import com.example.custommusicplayer.data.Song
 
 /** A song's cover art, or a music-note placeholder if it has none. */
 @Composable
-fun SongArt(song: Song, artLoader: AlbumArtLoader, modifier: Modifier = Modifier) {
+fun SongArt(
+    song: Song,
+    artLoader: AlbumArtLoader,
+    modifier: Modifier = Modifier,
+    sizePx: Int = AlbumArtLoader.SMALL_SIZE_PX,
+) {
     // produceState runs the block in a coroutine and turns its result into UI state.
     // Keyed on song.id: if this slot is reused for another song, it loads again.
-    val art by produceState<Bitmap?>(initialValue = null, song.id) {
-        value = artLoader.load(song)
+    val art by produceState<Bitmap?>(initialValue = null, song.id, sizePx) {
+        value = artLoader.load(song, sizePx)
     }
 
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(6.dp))
+            .clip(RoundedCornerShape(8.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant),
         contentAlignment = Alignment.Center,
     ) {
@@ -50,7 +54,7 @@ fun SongArt(song: Song, artLoader: AlbumArtLoader, modifier: Modifier = Modifier
             painter = painterResource(R.drawable.ic_music_note),
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.fillMaxSize().padding(12.dp),
+            modifier = Modifier.fillMaxSize(0.5f),
         )
     }
 }
