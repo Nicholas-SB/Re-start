@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.custommusicplayer.data.AlbumArtLoader
 import com.example.custommusicplayer.data.MusicScanner
 import com.example.custommusicplayer.data.Song
+import com.example.custommusicplayer.data.lyrics.LyricsLoader
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -21,7 +22,9 @@ import kotlinx.coroutines.launch
 class LibraryViewModel(application: Application) : AndroidViewModel(application) {
 
     private val scanner = MusicScanner(application)
+    // Helpers that load extra things for a song on demand.
     val artLoader = AlbumArtLoader(application)
+    val lyricsLoader = LyricsLoader(application)
 
     // Pattern: a private *Mutable* flow we write to, exposed publicly as read-only.
     // A StateFlow is an observable value: the UI is notified whenever it changes.

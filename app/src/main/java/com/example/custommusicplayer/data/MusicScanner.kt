@@ -52,6 +52,7 @@ class MusicScanner(private val context: Context) {
     // `suspend` marks a function that can pause without blocking a thread (a coroutine).
     // withContext(Dispatchers.IO) runs the block on a background thread meant for disk work,
     // so the UI never freezes while we query.
+    @Suppress("DEPRECATION")  // MediaStore.Audio.Media.DATA
     suspend fun querySongs(): List<Song> = withContext(Dispatchers.IO) {
         val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
@@ -67,6 +68,7 @@ class MusicScanner(private val context: Context) {
             MediaStore.Audio.Media.ALBUM,
             MediaStore.Audio.Media.DURATION,
             MediaStore.Audio.Media.DISPLAY_NAME,
+            MediaStore.Audio.Media.DATA,  // file path (deprecated, but still the only way to get it)
         )
         // Skip ringtones, notification sounds, recordings, etc.
         val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0"
@@ -83,6 +85,7 @@ class MusicScanner(private val context: Context) {
             val albumColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
             val durationColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
             val fileNameColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
+            val pathColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
 
             while (cursor.moveToNext()) {
                 val id = cursor.getLong(idColumn)
@@ -96,6 +99,7 @@ class MusicScanner(private val context: Context) {
                     album = cursor.getString(albumColumn).orIfUnknown("Unknown album"),
                     durationMs = cursor.getLong(durationColumn),
                     fileName = fileName,
+                    filePath = cursor.getString(pathColumn),
                 )
             }
         }

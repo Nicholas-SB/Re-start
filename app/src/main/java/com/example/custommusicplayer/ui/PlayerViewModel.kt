@@ -32,7 +32,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private val _uiState = MutableStateFlow(PlayerUiState())
     val uiState: StateFlow<PlayerUiState> = _uiState.asStateFlow()
 
-    // Kept separate from uiState because it changes twice a second while playing.
+    // Kept separate from uiState because it changes several times a second while playing.
     private val _positionMs = MutableStateFlow(0L)
     val positionMs: StateFlow<Long> = _positionMs.asStateFlow()
 
@@ -69,7 +69,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             while (isActive) {
                 controller?.let { _positionMs.value = it.currentPosition }
-                delay(500)
+                delay(200)  // often enough for lyrics to switch lines on time
             }
         }
     }

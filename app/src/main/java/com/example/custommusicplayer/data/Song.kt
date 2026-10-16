@@ -16,4 +16,5 @@ data class Song(
     val album: String,
     val durationMs: Long,
     val fileName: String,  // e.g. "Song I am. [Kohn9PRanoY].m4a"; stable key for playlists
+    val filePath: String?, // full path on the device, used to find the .lrc file next to it
 )

@@ -156,6 +156,7 @@ fun MusicPlayerApp(
                     positionMs = positionMs,
                     songsById = songsById,
                     artLoader = libraryViewModel.artLoader,
+                    lyricsLoader = libraryViewModel.lyricsLoader,
                     onClose = { showNowPlaying = false },
                     onTogglePlayPause = playerViewModel::togglePlayPause,
                     onSkipNext = playerViewModel::skipToNext,

@@ -21,7 +21,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -33,10 +35,11 @@ import androidx.compose.ui.unit.dp
 import com.example.custommusicplayer.R
 import com.example.custommusicplayer.data.AlbumArtLoader
 import com.example.custommusicplayer.data.Song
+import com.example.custommusicplayer.data.lyrics.LyricsLoader
 
 /**
- * Full-screen player: big cover, seek bar, all the controls, and the upcoming queue.
- * Like the other screens, it only displays state and reports button presses upward.
+ * Full-screen player: big cover (or lyrics), seek bar, all the controls, and the upcoming queue.
+ * Like the other screens, it reports button presses upward instead of changing things itself.
  */
 @Composable
 fun NowPlayingScreen(
@@ -45,6 +48,7 @@ fun NowPlayingScreen(
     positionMs: Long,
     songsById: Map<Long, Song>,
     artLoader: AlbumArtLoader,
+    lyricsLoader: LyricsLoader,
     onClose: () -> Unit,
     onTogglePlayPause: () -> Unit,
     onSkipNext: () -> Unit,
@@ -54,23 +58,47 @@ fun NowPlayingScreen(
     onCycleRepeat: () -> Unit,
     onQueueItemClick: (queueIndex: Int) -> Unit,
 ) {
+    var showLyrics by rememberSaveable { mutableStateOf(false) }
+
+    // Load lyrics only while they're shown; reload when the song changes.
+    val lyricsState by produceState<LyricsState>(LyricsState.Loading, song.id, showLyrics) {
+        if (!showLyrics) return@produceState
+        value = LyricsState.Loading
+        value = lyricsLoader.load(song)?.let { LyricsState.Found(it) } ?: LyricsState.NotFound
+    }
+
     Surface(modifier = Modifier.fillMaxSize()) {
         LazyColumn(modifier = Modifier.fillMaxSize().systemBarsPadding()) {
             item {
-                IconButton(onClick = onClose, modifier = Modifier.padding(8.dp)) {
-                    Icon(painterResource(R.drawable.ic_expand_more), contentDescription = "Close", modifier = Modifier.size(32.dp))
+                Row(modifier = Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                    IconButton(onClick = onClose) {
+                        Icon(painterResource(R.drawable.ic_expand_more), contentDescription = "Close", modifier = Modifier.size(32.dp))
+                    }
+                    IconButton(onClick = { showLyrics = !showLyrics }) {
+                        Icon(
+                            painterResource(R.drawable.ic_lyrics),
+                            contentDescription = if (showLyrics) "Hide lyrics" else "Show lyrics",
+                            tint = if (showLyrics) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             }
             item {
-                SongArt(
-                    song = song,
-                    artLoader = artLoader,
-                    sizePx = AlbumArtLoader.LARGE_SIZE_PX,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 32.dp)
-                        .aspectRatio(1f),  // keep it square
-                )
+                // Cover and lyrics take the same square spot, so the controls don't jump around.
+                val squareModifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 32.dp)
+                    .aspectRatio(1f)
+                if (showLyrics) {
+                    LyricsPanel(
+                        state = lyricsState,
+                        positionMs = positionMs,
+                        onSeek = onSeek,
+                        modifier = squareModifier,
+                    )
+                } else {
+                    SongArt(song = song, artLoader = artLoader, sizePx = AlbumArtLoader.LARGE_SIZE_PX, modifier = squareModifier)
+                }
             }
             item {
                 Column(
