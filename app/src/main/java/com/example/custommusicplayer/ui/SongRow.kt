@@ -40,6 +40,7 @@ fun SongRow(
     onClick: () -> Unit,
     isCurrent: Boolean = false,
     menuActions: List<MenuAction> = emptyList(),
+    subtitle: String = "${song.artist} · ${formatDuration(song.durationMs)}",
 ) {
     Row(
         modifier = Modifier
@@ -60,7 +61,7 @@ fun SongRow(
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = "${song.artist} · ${formatDuration(song.durationMs)}",
+                text = subtitle,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,

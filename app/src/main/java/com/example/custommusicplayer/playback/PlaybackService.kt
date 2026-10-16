@@ -2,6 +2,7 @@ package com.example.custommusicplayer.playback
 
 import android.app.PendingIntent
 import android.content.Intent
+import android.os.SystemClock
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -10,6 +11,11 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import com.example.custommusicplayer.data.db.MusicDatabase
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 /**
  * Plays the music, independently of the UI.
@@ -46,6 +52,50 @@ class PlaybackService : MediaSessionService() {
         }
     }
 
+    // --- Listening stats ---
+
+    // Database writes run on this scope. It's deliberately never cancelled, so the last
+    // write still finishes while the service shuts down. (Each write takes milliseconds.)
+    private val statsScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    // `by lazy`: created the first time it's used (after onCreate), then reused.
+    private val statsDao by lazy { MusicDatabase.getInstance(this).statsDao() }
+
+    private val listeningTracker = ListeningTracker(
+        recorder = object : ListeningRecorder {
+            override fun recordPlay(songFileName: String, listenedMs: Long) {
+                val playedAt = System.currentTimeMillis()
+                statsScope.launch { statsDao.recordPlay(songFileName, playedAt, listenedMs) }
+            }
+
+            override fun recordSkip(songFileName: String, listenedMs: Long) {
+                statsScope.launch { statsDao.recordSkip(songFileName, listenedMs) }
+            }
+
+            override fun recordListening(songFileName: String, listenedMs: Long) {
+                statsScope.launch { statsDao.recordListening(songFileName, listenedMs) }
+            }
+        },
+        // elapsedRealtime: milliseconds since boot. Unlike the wall clock, it never jumps
+        // when the phone's time or time zone changes.
+        clock = SystemClock::elapsedRealtime,
+    )
+
+    /** Feeds player events to the ListeningTracker. */
+    private val statsListener = object : Player.Listener {
+        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            // SEEK = Next/Previous/picked from the queue; PLAYLIST_CHANGED = started something else.
+            val userMovedOn = reason == Player.MEDIA_ITEM_TRANSITION_REASON_SEEK ||
+                reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED
+            listeningTracker.songEnded(userSkipped = userMovedOn)
+            listeningTracker.songStarted(mediaItem?.songFileName, mediaItem?.songDurationMs ?: 0L, player.isPlaying)
+        }
+
+        override fun onIsPlayingChanged(isPlaying: Boolean) {
+            listeningTracker.playingChanged(isPlaying)
+        }
+    }
+
     @OptIn(UnstableApi::class)
     private fun reshuffle() {
         player.setShuffleOrder(FisherYatesShuffleOrder(player.mediaItemCount, player.currentMediaItemIndex))
@@ -71,6 +121,7 @@ class PlaybackService : MediaSessionService() {
             .setWakeMode(C.WAKE_MODE_LOCAL)
             .build()
         player.addListener(reshuffleListener)
+        player.addListener(statsListener)
 
         mediaSession = MediaSession.Builder(this, player)
             .setSessionActivity(openAppIntent())
@@ -88,7 +139,9 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        listeningTracker.songEnded(userSkipped = false)  // save the song that was playing
         player.removeListener(reshuffleListener)
+        player.removeListener(statsListener)
         player.release()
         mediaSession?.release()
         mediaSession = null

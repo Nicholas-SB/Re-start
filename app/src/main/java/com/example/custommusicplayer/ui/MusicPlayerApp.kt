@@ -31,7 +31,7 @@ import com.example.custommusicplayer.downloader.DownloadScreen
 import com.example.custommusicplayer.downloader.DownloadViewModel
 
 /** The tabs in the bottom navigation bar. */
-private enum class Tab { SONGS, PLAYLISTS, DOWNLOAD }
+private enum class Tab { HOME, SONGS, PLAYLISTS, DOWNLOAD }
 
 /**
  * The top-level screen: wires the ViewModels to the UI and decides which screen is shown.
@@ -45,6 +45,7 @@ fun MusicPlayerApp(
     playerViewModel: PlayerViewModel = viewModel(),
     playlistViewModel: PlaylistViewModel = viewModel(),
     downloadViewModel: DownloadViewModel = viewModel(),
+    statsViewModel: StatsViewModel = viewModel(),
 ) {
     // Turn each StateFlow into Compose state, so the UI redraws when it changes.
     val songs by libraryViewModel.songs.collectAsStateWithLifecycle()
@@ -52,6 +53,8 @@ fun MusicPlayerApp(
     val playerState by playerViewModel.uiState.collectAsStateWithLifecycle()
     val positionMs by playerViewModel.positionMs.collectAsStateWithLifecycle()
     val playlists by playlistViewModel.playlists.collectAsStateWithLifecycle()
+    val stats by statsViewModel.stats.collectAsStateWithLifecycle()
+    val playsLast30Days by statsViewModel.playsLast30Days.collectAsStateWithLifecycle()
 
     // The player knows songs by id, playlists by file name. These maps find the full Song fast.
     // remember(songs) rebuilds them only when the song list changes.
@@ -60,7 +63,7 @@ fun MusicPlayerApp(
     val currentSong = playerState.currentSongId?.let { songsById[it] }
 
     // Navigation state. rememberSaveable keeps it across rotation.
-    var tab by rememberSaveable { mutableStateOf(Tab.SONGS) }
+    var tab by rememberSaveable { mutableStateOf(Tab.HOME) }
     var openPlaylistId by rememberSaveable { mutableStateOf<Long?>(null) }
     var showNowPlaying by rememberSaveable { mutableStateOf(false) }
     // Lyrics are on by default; the choice is kept while the app is open.
@@ -94,6 +97,12 @@ fun MusicPlayerApp(
                         )
                     }
                     NavigationBar {
+                        NavigationBarItem(
+                            selected = tab == Tab.HOME,
+                            onClick = { tab = Tab.HOME; openPlaylistId = null },
+                            icon = { Icon(painterResource(R.drawable.ic_home), contentDescription = null) },
+                            label = { Text("Home") },
+                        )
                         NavigationBarItem(
                             selected = tab == Tab.SONGS,
                             onClick = { tab = Tab.SONGS; openPlaylistId = null },
@@ -132,6 +141,15 @@ fun MusicPlayerApp(
                         currentSongId = playerState.currentSongId,
                         artLoader = libraryViewModel.artLoader,
                         onClose = { openPlaylistId = null },
+                        modifier = contentModifier,
+                    )
+                    tab == Tab.HOME -> HomeScreen(
+                        songsByFileName = songsByFileName,
+                        stats = stats,
+                        playsLast30Days = playsLast30Days,
+                        currentSongId = playerState.currentSongId,
+                        artLoader = libraryViewModel.artLoader,
+                        onPlaySongs = playerViewModel::playQueue,
                         modifier = contentModifier,
                     )
                     tab == Tab.SONGS -> LibraryScreen(
