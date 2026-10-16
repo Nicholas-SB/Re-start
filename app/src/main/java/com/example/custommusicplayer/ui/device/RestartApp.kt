@@ -91,7 +91,12 @@ fun RestartApp(
 
     // Temporary: the previous (YouTube Music-style) UI, for features not moved over yet.
     var showClassic by rememberSaveable { mutableStateOf(false) }
-    var showLyrics by rememberSaveable { mutableStateOf(true) }
+
+    // Lyrics start off. rememberSaveable keeps your choice while the app is "open": through the
+    // screen turning off, switching apps, rotation, even Android quietly closing the app in the
+    // background (it's restored from the saved state). Closing the app yourself (swiping it away)
+    // throws the saved state away, so the next start is back to off.
+    var showLyrics by rememberSaveable { mutableStateOf(false) }
 
     // The text being typed on a NameEntry page.
     var nameDraft by rememberSaveable { mutableStateOf("") }
