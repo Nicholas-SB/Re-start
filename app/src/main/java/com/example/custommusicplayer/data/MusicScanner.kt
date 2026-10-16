@@ -2,10 +2,16 @@ package com.example.custommusicplayer.data
 
 import android.content.ContentUris
 import android.content.Context
+import android.media.MediaScannerConnection
 import android.os.Build
+import android.os.Environment
 import android.provider.MediaStore
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.coroutines.resume
 
 /**
  * Finds the audio files on the device.
@@ -15,10 +21,38 @@ import kotlinx.coroutines.withContext
  */
 class MusicScanner(private val context: Context) {
 
+    /**
+     * Asks Android's media scanner to index new or changed files in [FOLDERS_TO_SCAN], and
+     * waits until it's done.
+     *
+     * Files copied onto the phone aren't always indexed right away. Until they are, MediaStore
+     * doesn't know they're music and has no title/artist for them, so querySongs() skips them.
+     * The scanner skips files it has already seen, so this is quick when nothing changed.
+     */
+    suspend fun indexNewFiles() {
+        @Suppress("DEPRECATION")  // still the simplest way to get these folders' paths
+        val paths = FOLDERS_TO_SCAN
+            .map { Environment.getExternalStoragePublicDirectory(it).absolutePath }
+            .toTypedArray()
+
+        // Give up after a while rather than leave the refresh spinner going forever.
+        withTimeoutOrNull(SCAN_TIMEOUT_MS) {
+            // suspendCancellableCoroutine turns a callback-style API into a suspend function:
+            // the coroutine pauses here until we call continuation.resume().
+            suspendCancellableCoroutine { continuation ->
+                val foldersLeft = AtomicInteger(paths.size)  // thread-safe counter
+                MediaScannerConnection.scanFile(context, paths, null) { _, _ ->
+                    // Called once per folder, on a background thread.
+                    if (foldersLeft.decrementAndGet() == 0) continuation.resume(Unit)
+                }
+            }
+        }
+    }
+
     // `suspend` marks a function that can pause without blocking a thread (a coroutine).
     // withContext(Dispatchers.IO) runs the block on a background thread meant for disk work,
     // so the UI never freezes while we query.
-    suspend fun scan(): List<Song> = withContext(Dispatchers.IO) {
+    suspend fun querySongs(): List<Song> = withContext(Dispatchers.IO) {
         val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
         } else {
@@ -74,4 +108,10 @@ class MusicScanner(private val context: Context) {
      */
     private fun String?.orIfUnknown(fallback: String): String =
         if (isNullOrBlank() || this == MediaStore.UNKNOWN_STRING) fallback else this
+
+    companion object {
+        /** Folders (and their subfolders) to index. Add more if your music lives elsewhere. */
+        private val FOLDERS_TO_SCAN = listOf(Environment.DIRECTORY_MUSIC, Environment.DIRECTORY_DOWNLOADS)
+        private const val SCAN_TIMEOUT_MS = 30_000L
+    }
 }

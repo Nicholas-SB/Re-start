@@ -45,7 +45,11 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         // if the ViewModel is destroyed.
         viewModelScope.launch {
             _isScanning.value = true
-            _songs.value = scanner.scan()
+            // Show what Android already knows right away...
+            _songs.value = scanner.querySongs()
+            // ...then have it index any new files, and refresh the list.
+            scanner.indexNewFiles()
+            _songs.value = scanner.querySongs()
             _isScanning.value = false
         }
     }
