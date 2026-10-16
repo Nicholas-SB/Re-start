@@ -101,7 +101,7 @@ fun DownloadScreen(
             }
             Spacer(Modifier.height(16.dp))
         }
-        items(jobs, key = { it.id }) { job ->
+        items(jobs.filter { it.needsAttention() }, key = { it.id }) { job ->
             DownloadJobCard(job)
         }
     }
@@ -167,10 +167,21 @@ fun PlaylistImportScreen(viewModel: DownloadViewModel, playlists: List<PlaylistC
                 Text("Import")
             }
         }
-        items(jobs, key = { it.id }) { job ->
+        items(jobs.filter { it.needsAttention() }, key = { it.id }) { job ->
             DownloadJobCard(job)
         }
     }
+}
+
+/**
+ * Only what's worth a look: the song being downloaded, songs that failed, and playlist
+ * summaries. Finished songs (new or already on the phone) and a playlist's songs that are
+ * still waiting their turn are left out, so the list stays short.
+ */
+private fun DownloadJob.needsAttention(): Boolean = when (status) {
+    is DownloadStatus.Done -> false
+    DownloadStatus.Waiting -> playlistName == null
+    else -> true
 }
 
 /**
@@ -288,13 +299,6 @@ private fun DownloadJobCard(job: DownloadJob) {
                     color = if (status is DownloadStatus.Failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            if (status is DownloadStatus.PlaylistProgress && status.finished == status.total && status.failedTitles.isNotEmpty()) {
-                Text(
-                    "Couldn't download:\n" + status.failedTitles.joinToString("\n") { "• $it" },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
             when (status) {
                 is DownloadStatus.Downloading ->
                     LinearProgressIndicator(progress = { status.percent / 100f }, modifier = Modifier.fillMaxWidth())
@@ -309,12 +313,12 @@ private fun DownloadJobCard(job: DownloadJob) {
     }
 }
 
-/** e.g. "Done · 3 downloaded, 8 already on your phone
-Added 5 to Gym · 6 were already in it" */
+/** e.g. "Done · 3 downloaded, 8 already on your phone, 1 failed", then "Added 5 to Gym · 6 were already in it" */
 private fun playlistSummary(status: DownloadStatus.PlaylistProgress): String {
     val got = listOfNotNull(
         "${status.downloaded} downloaded".takeIf { status.downloaded > 0 },
         "${status.reused} already on your phone".takeIf { status.reused > 0 },
+        "${status.failedTitles.size} failed".takeIf { status.failedTitles.isNotEmpty() },
     ).ifEmpty { listOf("nothing downloaded") }.joinToString(", ")
     val added = "Added ${status.added} to ${status.playlistName}" +
         when (status.alreadyInPlaylist) {

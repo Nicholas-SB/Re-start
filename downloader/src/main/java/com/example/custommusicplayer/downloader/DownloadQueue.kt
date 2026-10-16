@@ -249,16 +249,20 @@ class DownloadQueue private constructor(private val context: Context) {
     }
 
     /** yt-dlp errors are long; show the line that actually says what went wrong. */
-    private fun friendlyMessage(e: Exception): String =
-        (e.message ?: e.toString())
-            .lines()
-            .lastOrNull { it.contains("ERROR") }
-            ?.substringAfter("ERROR:")
-            ?.trim()
-            ?.take(200)
-            ?: (e.message ?: "Download failed").lines().first().take(200)
+    private fun friendlyMessage(e: Exception): String {
+        val text = e.message ?: e.toString()
+        if (connectionErrors.any { text.contains(it, ignoreCase = true) }) return "No internet connection"
+        val lines = text.lines().map { it.trim() }.filter { it.isNotEmpty() }
+        val error = lines.lastOrNull { "ERROR:" in it }?.substringAfter("ERROR:")?.trim()?.ifEmpty { null }
+        return (error ?: lines.firstOrNull() ?: "Download failed").take(200)
+    }
 
     companion object {
+        /** How Python (inside yt-dlp) says the connection is gone. */
+        private val connectionErrors = listOf(
+            "No address associated with hostname", "connection abort", "Network is unreachable", "Connection reset", "timed out",
+        )
+
         @Volatile
         private var instance: DownloadQueue? = null
 
