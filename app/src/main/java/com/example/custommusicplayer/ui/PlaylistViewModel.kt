@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -38,6 +39,10 @@ class PlaylistViewModel(application: Application) : AndroidViewModel(application
         combine(dao.observePlaylist(playlistId), dao.observeEntries(playlistId)) { playlist, entries ->
             playlist?.let { PlaylistDetail(it, entries) }
         }
+
+    /** Which playlists already have [song] in them. */
+    fun observePlaylistsContaining(song: Song): Flow<Set<Long>> =
+        dao.observePlaylistsContaining(song.fileName).map { it.toSet() }
 
     fun createPlaylist(name: String, firstSong: Song? = null) {
         viewModelScope.launch {

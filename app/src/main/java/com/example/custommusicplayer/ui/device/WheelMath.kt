@@ -7,10 +7,10 @@ import kotlin.math.atan2
  * Turns a finger moving around the click wheel into whole "steps" (one tick each).
  *
  * Angles are in degrees, measured from the wheel's center. On screen the y axis points down,
- * so going clockwise makes the angle *increase*. One step = [degreesPerStep], so the default
- * of 18° gives 20 ticks per full turn, close to the original iPod's feel.
+ * so going clockwise makes the angle *increase*. One step = [degreesPerStep]: the default of
+ * 24° gives 15 ticks per full turn. (Lower = lighter wheel, higher = heavier.)
  */
-class WheelRotationTracker(private val degreesPerStep: Float = 18f) {
+class WheelRotationTracker(private val degreesPerStep: Float = 24f) {
 
     private var lastAngle: Float? = null
     private var leftover = 0f  // rotation that hasn't added up to a full step yet
@@ -58,8 +58,8 @@ class WheelAcceleration(private val windowMs: Long = 400) {
             recentSteps.removeFirst()
         }
         val multiplier = when {
-            recentSteps.size >= 20 -> 4  // about a full turn in under half a second
-            recentSteps.size >= 10 -> 2
+            recentSteps.size >= 14 -> 4  // about a full turn in under half a second
+            recentSteps.size >= 7 -> 2
             else -> 1
         }
         return steps * multiplier

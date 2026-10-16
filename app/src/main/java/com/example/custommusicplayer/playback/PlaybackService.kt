@@ -1,8 +1,16 @@
 package com.example.custommusicplayer.playback
 
+import android.Manifest
+import android.annotation.SuppressLint
 import android.app.PendingIntent
+import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.SystemClock
+import android.telephony.PhoneStateListener
+import android.telephony.TelephonyCallback
+import android.telephony.TelephonyManager
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -93,7 +101,65 @@ class PlaybackService : MediaSessionService() {
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             listeningTracker.playingChanged(isPlaying)
+            // The permission may have been given since the service started, so check again.
+            if (isPlaying) watchCalls()
         }
+    }
+
+    // --- Pausing for phone calls ---
+    // Audio focus already pauses music for calls that *ring out loud*. A call on a silent
+    // ringer asks nobody to pause, so if you allow it, we also watch the call state directly.
+
+    private val telephony by lazy { getSystemService(TelephonyManager::class.java) }
+    private var callWatcher: Any? = null  // the registered TelephonyCallback or PhoneStateListener
+    private var pausedForCall = false
+
+    private fun onCallStateChanged(state: Int) {
+        val enabled = getSharedPreferences("device_settings", Context.MODE_PRIVATE).getBoolean("pause_for_calls", false)
+        when (state) {
+            TelephonyManager.CALL_STATE_RINGING, TelephonyManager.CALL_STATE_OFFHOOK ->
+                if (enabled && player.isPlaying) {
+                    player.pause()
+                    pausedForCall = true
+                }
+            TelephonyManager.CALL_STATE_IDLE ->
+                if (pausedForCall) {
+                    pausedForCall = false
+                    player.play()  // the call ended: carry on where we were
+                }
+        }
+    }
+
+    /** Starts watching calls, if the phone permission has been given (and we aren't already). */
+    @SuppressLint("MissingPermission")  // checked just below
+    private fun watchCalls() {
+        if (callWatcher != null) return
+        if (checkSelfPermission(Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) return
+        callWatcher = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            // An object that extends a class *and* implements an interface: Kotlin's version of
+            // an anonymous class like `new TelephonyCallback() implements CallStateListener`.
+            object : TelephonyCallback(), TelephonyCallback.CallStateListener {
+                override fun onCallStateChanged(state: Int) = this@PlaybackService.onCallStateChanged(state)
+            }.also { telephony.registerTelephonyCallback(mainExecutor, it) }
+        } else {
+            @Suppress("DEPRECATION")  // the pre-Android 12 way
+            object : PhoneStateListener() {
+                @Deprecated("Deprecated in Java")
+                override fun onCallStateChanged(state: Int, phoneNumber: String?) = this@PlaybackService.onCallStateChanged(state)
+            }.also { telephony.listen(it, PhoneStateListener.LISTEN_CALL_STATE) }
+        }
+    }
+
+    @Suppress("DEPRECATION")  // PhoneStateListener, for Android 11 and older
+    private fun stopWatchingCalls() {
+        val watcher = callWatcher ?: return
+        // Check the Android version first: TelephonyCallback doesn't exist before Android 12.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && watcher is TelephonyCallback) {
+            telephony.unregisterTelephonyCallback(watcher)
+        } else if (watcher is PhoneStateListener) {
+            telephony.listen(watcher, PhoneStateListener.LISTEN_NONE)
+        }
+        callWatcher = null
     }
 
     @OptIn(UnstableApi::class)
@@ -126,6 +192,7 @@ class PlaybackService : MediaSessionService() {
         mediaSession = MediaSession.Builder(this, player)
             .setSessionActivity(openAppIntent())
             .build()
+        watchCalls()
     }
 
     /** Called when a controller (our UI, the notification, ...) wants to connect. */
@@ -140,6 +207,7 @@ class PlaybackService : MediaSessionService() {
 
     override fun onDestroy() {
         listeningTracker.songEnded(userSkipped = false)  // save the song that was playing
+        stopWatchingCalls()
         player.removeListener(reshuffleListener)
         player.removeListener(statsListener)
         player.release()

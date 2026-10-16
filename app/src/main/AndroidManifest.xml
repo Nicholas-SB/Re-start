@@ -11,6 +11,11 @@
     <!-- Keep playing in the background: a foreground service of type "media playback". -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <!-- Optional ("Pause for calls" in Settings): know when a call is ringing, so music pauses
+         even when the ringer is silent. The app never sees who is calling. -->
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <!-- Short vibrations for the click wheel's ticks. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
     <!-- Keep the CPU awake while music plays with the screen off. -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 

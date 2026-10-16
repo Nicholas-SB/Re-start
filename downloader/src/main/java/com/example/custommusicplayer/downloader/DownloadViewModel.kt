@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import java.io.File
 
 /** One pasted link and how far along it is. */
 data class DownloadJob(
@@ -75,14 +76,14 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
             val lyricsOutcome = when {
                 lyricsFile.exists() -> LyricsOutcome.ALREADY_THERE
                 else -> lrclib.findLyrics(song.track)?.let { lyrics ->
-                    lyricsFile.writeText(lyrics)
+                    saveLyrics(lyricsFile, lyrics)
                     LyricsOutcome.SAVED
                 } ?: LyricsOutcome.NOT_FOUND
             }
 
             val newFiles = buildList {
                 if (!song.wasAlreadyInLibrary) add(song.file)
-                if (lyricsOutcome == LyricsOutcome.SAVED) add(lyricsFile)
+                if (lyricsOutcome == LyricsOutcome.SAVED && lyricsFile.exists()) add(lyricsFile)
             }
             if (newFiles.isNotEmpty()) downloader.indexFiles(newFiles)
 
@@ -92,6 +93,19 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
             throw e  // the ViewModel is going away; let the coroutine stop
         } catch (e: Exception) {
             setStatus(job.id, DownloadStatus.Failed(friendlyMessage(e)))
+        }
+    }
+
+    /**
+     * Saves lyrics next to the song. If Android won't allow a .lrc file in that folder, keep it
+     * in the app's private "lyrics" folder instead, which the player also checks.
+     */
+    private fun saveLyrics(nextToSong: File, lyrics: String) {
+        try {
+            nextToSong.writeText(lyrics)
+        } catch (e: Exception) {
+            val privateFolder = File(getApplication<Application>().filesDir, "lyrics").apply { mkdirs() }
+            File(privateFolder, nextToSong.name).writeText(lyrics)
         }
     }
 

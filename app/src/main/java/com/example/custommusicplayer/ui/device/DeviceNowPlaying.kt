@@ -53,9 +53,8 @@ import com.example.custommusicplayer.ui.formatDuration
 import kotlin.math.abs
 
 /**
- * The Now Playing page inside the player's screen: "2 of 10", a big cover with the song
- * below it (or the lyrics), and a progress bar that turns into a volume bar while you turn
- * the wheel.
+ * The Now Playing page inside the player's screen: a big cover with the song below it (or the
+ * lyrics), and a progress bar that turns into a volume bar while you turn the wheel.
  */
 @Composable
 fun DeviceNowPlaying(
@@ -101,15 +100,7 @@ fun DeviceNowPlaying(
             )
         }
 
-        Column(modifier = Modifier.fillMaxSize().padding(12.dp)) {
-            Text(
-                "${state.queuePosition} of ${state.queueSize}",
-                color = DeviceColors.TextSoft,
-                fontSize = 13.sp,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth(),
-            )
-
+        Column(modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = 8.dp)) {
             if (lyricsFound) {
                 // Small title line above the lyrics, so you still know what's playing.
                 Text(
@@ -154,7 +145,7 @@ fun DeviceNowPlaying(
 private fun SongInfo(song: Song, artLoader: AlbumArtLoader, note: String?, modifier: Modifier = Modifier) {
     Column(modifier = modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
-            modifier = Modifier.weight(1f).fillMaxWidth().padding(vertical = 10.dp),
+            modifier = Modifier.weight(1f).fillMaxWidth().padding(bottom = 8.dp),
             contentAlignment = Alignment.Center,
         ) {
             val shape = RoundedCornerShape(10.dp)

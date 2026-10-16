@@ -60,15 +60,24 @@ interface PlaylistDao {
     @Query("SELECT COALESCE(MAX(position), -1) FROM playlist_songs WHERE playlistId = :playlistId")
     suspend fun lastPosition(playlistId: Long): Int
 
+    @Query("SELECT COUNT(*) FROM playlist_songs WHERE playlistId = :playlistId AND songFileName = :songFileName")
+    suspend fun countSong(playlistId: Long, songFileName: String): Int
+
+    /** Ids of the playlists that already contain a song (live, for "Already added"). */
+    @Query("SELECT DISTINCT playlistId FROM playlist_songs WHERE songFileName = :songFileName")
+    fun observePlaylistsContaining(songFileName: String): Flow<List<Long>>
+
     // Functions with a body combine several operations. @Transaction makes them all-or-nothing,
     // so the playlist can't end up half-updated if something fails midway.
 
-    /** Adds a song at the end of the playlist. */
+    /** Adds a song at the end of the playlist, unless it's already in it. Returns whether it was added. */
     @Transaction
-    suspend fun addSong(playlistId: Long, songFileName: String) {
+    suspend fun addSong(playlistId: Long, songFileName: String): Boolean {
+        if (countSong(playlistId, songFileName) > 0) return false
         insertEntry(
             PlaylistSongEntity(playlistId = playlistId, songFileName = songFileName, position = lastPosition(playlistId) + 1)
         )
+        return true
     }
 
     /** Moves the song at list position [from] to position [to], shifting the others. */

@@ -22,18 +22,16 @@ import kotlin.coroutines.resume
 class MusicScanner(private val context: Context) {
 
     /**
-     * Asks Android's media scanner to index new or changed files in [FOLDERS_TO_SCAN], and
-     * waits until it's done.
+     * Asks Android's media scanner to index new or changed files in [folders] (paths from the
+     * storage root, e.g. "YMusic"), and waits until it's done.
      *
      * Files copied onto the phone aren't always indexed right away. Until they are, MediaStore
      * doesn't know they're music and has no title/artist for them, so querySongs() skips them.
      * The scanner skips files it has already seen, so this is quick when nothing changed.
      */
-    suspend fun indexNewFiles() {
-        @Suppress("DEPRECATION")  // still the simplest way to get these folders' paths
-        val paths = FOLDERS_TO_SCAN
-            .map { Environment.getExternalStoragePublicDirectory(it).absolutePath }
-            .toTypedArray()
+    suspend fun indexNewFiles(folders: List<String>) {
+        val paths = folders.map { "${storageRoot()}/$it" }.toTypedArray()
+        if (paths.isEmpty()) return
 
         // Give up after a while rather than leave the refresh spinner going forever.
         withTimeoutOrNull(SCAN_TIMEOUT_MS) {
@@ -69,6 +67,7 @@ class MusicScanner(private val context: Context) {
             MediaStore.Audio.Media.DURATION,
             MediaStore.Audio.Media.DISPLAY_NAME,
             MediaStore.Audio.Media.DATA,  // file path (deprecated, but still the only way to get it)
+            MediaStore.Audio.Media.DATE_ADDED,  // seconds since 1970
         )
         // Skip ringtones, notification sounds, recordings, etc.
         val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0"
@@ -86,11 +85,14 @@ class MusicScanner(private val context: Context) {
             val durationColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
             val fileNameColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
             val pathColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
+            val dateAddedColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED)
 
             while (cursor.moveToNext()) {
                 val id = cursor.getLong(idColumn)
                 val fileName = cursor.getString(fileNameColumn) ?: "Unknown"
                 val filePath: String? = cursor.getString(pathColumn)
+                // "/storage/emulated/0/YMusic/Song.m4a" -> "YMusic"
+                val relativeFolder = filePath?.removePrefix(storageRoot() + "/")?.substringBeforeLast('/', "").orEmpty()
                 // Without an album tag, Android uses the folder name (e.g. "Download") as the album.
                 val folderName = filePath?.substringBeforeLast('/')?.substringAfterLast('/')
                 val album = cursor.getString(albumColumn)?.takeIf { it != folderName }
@@ -104,6 +106,8 @@ class MusicScanner(private val context: Context) {
                     durationMs = cursor.getLong(durationColumn),
                     fileName = fileName,
                     filePath = filePath,
+                    dateAddedMs = cursor.getLong(dateAddedColumn) * 1000,
+                    folder = relativeFolder,
                 )
             }
         }
@@ -118,11 +122,25 @@ class MusicScanner(private val context: Context) {
     private fun String?.orIfUnknown(fallback: String): String =
         if (isNullOrBlank() || this == MediaStore.UNKNOWN_STRING) fallback else this
 
+    @Suppress("DEPRECATION")  // still the simplest way to get the shared storage's path
+    private fun storageRoot(): String = Environment.getExternalStorageDirectory().absolutePath
+
     companion object {
         const val UNKNOWN_ALBUM = "Unknown album"
 
-        /** Folders (and their subfolders) to index. Add more if your music lives elsewhere. */
-        private val FOLDERS_TO_SCAN = listOf(Environment.DIRECTORY_MUSIC, Environment.DIRECTORY_DOWNLOADS)
+        /** The library folder until you pick another one in Settings. */
+        const val DEFAULT_FOLDER = "Music"
+
+        /**
+         * Where the downloader saves songs. Always part of the library, whatever folder is
+         * picked. (Same value as in the downloader module; the player doesn't depend on it.)
+         */
+        const val DOWNLOADS_FOLDER = "Music/Re-start"
+
+        /** Is a song in [folder] part of a library that shows [chosen] (including subfolders)? */
+        fun isInFolder(folder: String, chosen: String): Boolean =
+            folder == chosen || folder.startsWith("$chosen/")
+
         private const val SCAN_TIMEOUT_MS = 30_000L
     }
 }

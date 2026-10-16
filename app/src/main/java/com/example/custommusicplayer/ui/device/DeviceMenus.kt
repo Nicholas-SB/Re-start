@@ -5,6 +5,7 @@ import com.example.custommusicplayer.data.Song
 import com.example.custommusicplayer.data.db.PlaylistSummary
 import com.example.custommusicplayer.data.db.SongStatsEntity
 import com.example.custommusicplayer.data.mixes.Mix
+import com.example.custommusicplayer.ui.FolderChoice
 import com.example.custommusicplayer.ui.PlayerUiState
 import com.example.custommusicplayer.ui.PlayerViewModel
 import com.example.custommusicplayer.ui.PlaylistDetail
@@ -23,12 +24,17 @@ class DeviceMenus(
     private val playerState: PlayerUiState,
     private val playlists: List<PlaylistSummary>,
     private val shownPlaylist: PlaylistDetail?,  // the playlist the current page is about, once loaded
+    private val playlistsWithSong: Set<Long>,    // on "Add to Playlist": playlists that already have the song
     private val navigation: DeviceNavigationViewModel,
     private val player: PlayerViewModel,
     private val playlistActions: PlaylistViewModel,
     private val mixes: List<Mix>,
     private val stats: Map<String, SongStatsEntity>,
     private val settings: DeviceSettings,
+    private val musicFolder: String,
+    private val folderChoices: List<FolderChoice>,
+    private val chooseMusicFolder: (String) -> Unit,
+    private val togglePauseForCalls: () -> Unit,
     private val showMessage: (String) -> Unit,
     private val startNameEntry: (page: Page.NameEntry, initialText: String) -> Unit,
 ) {
@@ -46,6 +52,7 @@ class DeviceMenus(
         Page.Stats -> "Stats"
         Page.Download -> "Download"
         Page.Settings -> "Settings"
+        Page.MusicFolder -> "Music Folder"
         Page.NowPlaying -> "Now Playing"
         Page.NowPlayingOptions -> "Options"
         Page.UpNext -> "Up Next"
@@ -61,7 +68,7 @@ class DeviceMenus(
     fun entries(page: Page): List<MenuEntry> = when (page) {
         Page.MainMenu -> mainMenu()
         Page.Music -> musicMenu()
-        Page.Songs -> songListMenu(songs)
+        Page.Songs -> songsMenu()
         Page.Artists -> artistsMenu()
         is Page.Artist -> songListMenu(songs.filter { it.artist == page.name }, withShuffle = true)
         Page.Albums -> albumsMenu()
@@ -70,6 +77,7 @@ class DeviceMenus(
         is Page.Mix -> mixMenu(page.mixId)
         Page.Stats -> statsMenu()
         Page.Settings -> settingsMenu()
+        Page.MusicFolder -> musicFolderMenu()
         Page.NowPlayingOptions -> nowPlayingOptionsMenu()
         Page.UpNext -> upNextMenu()
         Page.Playlists -> playlistsMenu()
@@ -107,6 +115,17 @@ class DeviceMenus(
         MenuEntry("Playlists", detail = plural(playlists.size, "playlist"), opensSubmenu = true) { navigation.open(Page.Playlists) },
     )
 
+    /** All songs, with a "Sort" row on top that switches between A–Z and newest first. */
+    private fun songsMenu(): List<MenuEntry> {
+        if (songs.isEmpty()) return emptyList()  // so the page shows its "No songs" message instead
+        val sorted = when (settings.songSort) {
+            SongSort.A_TO_Z -> songs  // the scanner already returns them A–Z
+            SongSort.RECENTLY_ADDED -> songs.sortedByDescending { it.dateAddedMs }
+        }
+        return listOf(MenuEntry("Sort", detail = settings.songSort.label) { settings.cycleSongSort() }) +
+            songListMenu(sorted)
+    }
+
     /**
      * A list of songs: choosing one plays the whole list from there. Used by Songs, an
      * artist, an album and a mix. Holding the center offers "Add to Playlist".
@@ -118,6 +137,7 @@ class DeviceMenus(
                 MenuEntry(
                     song.title,
                     detail = song.artist,
+                    song = song,
                     onLongPress = { navigation.open(Page.AddToPlaylist(song.id)) },
                 ) { playAll(list, startIndex = index) }
             )
@@ -189,6 +209,7 @@ class DeviceMenus(
                     MenuEntry(
                         "${index + 1}. ${song.title}",
                         detail = "${plural(songStats.playCount, "play")} · ${lastPlayedText(songStats.lastPlayedAt)}",
+                        song = song,
                         onLongPress = { navigation.open(Page.AddToPlaylist(song.id)) },
                     ) { playAll(topSongs, startIndex = index) }
                 )
@@ -199,10 +220,34 @@ class DeviceMenus(
     // --- Settings ---
 
     private fun settingsMenu() = listOf(
-        MenuEntry("Clicker", detail = if (settings.clickSound) "On" else "Off") { settings.toggleClickSound() },
-        MenuEntry("Wheel vibration", detail = if (settings.vibration) "On" else "Off") { settings.toggleVibration() },
+        MenuEntry("Music folder", detail = musicFolder, opensSubmenu = true) { navigation.open(Page.MusicFolder) },
+        MenuEntry("Clicker", detail = if (settings.clickSound) "On · click sound for every wheel step" else "Off") {
+            settings.toggleClickSound()
+        },
+        MenuEntry("Wheel vibration", detail = settings.vibration.label) { settings.cycleVibration() },
+        MenuEntry("Pause for calls", detail = if (settings.pauseForCalls) "On · even when the ringer is silent" else "Off") {
+            togglePauseForCalls()
+        },
+        MenuEntry("Scratch sound", detail = if (settings.scratchSound) "On · when holding ⏮ / ⏭" else "Off") {
+            settings.toggleScratchSound()
+        },
         MenuEntry("About", detail = "Re-start · your music, your player") {},
     )
+
+    /** Pick the one folder the library shows (downloads in Music/Re-start always count too). */
+    private fun musicFolderMenu() = folderChoices.map { choice ->
+        val current = choice.folder == musicFolder
+        MenuEntry(
+            choice.folder,
+            detail = plural(choice.songCount, "song") + if (current) " · current" else "",
+        ) {
+            if (!current) {
+                chooseMusicFolder(choice.folder)
+                showMessage("Library: ${choice.folder}")
+            }
+            navigation.back()
+        }
+    }
 
     // --- Now Playing options ---
 
@@ -226,7 +271,7 @@ class DeviceMenus(
     /** The queue after the current song, in play order. Choosing one jumps there. */
     private fun upNextMenu() = playerState.upNext.mapNotNull { entry ->
         val song = songsById[entry.songId] ?: return@mapNotNull null
-        MenuEntry(song.title, detail = song.artist) {
+        MenuEntry(song.title, detail = song.artist, song = song) {
             player.skipToQueueItem(entry.queueIndex)
             navigation.backTo(Page.NowPlaying)
         }
@@ -261,7 +306,7 @@ class DeviceMenus(
                 val song = songsByFileName[entry.songFileName]
                 val openOptions = { navigation.open(Page.PlaylistEntryOptions(playlistId, entry.id)) }
                 if (song != null) {
-                    add(MenuEntry(song.title, detail = song.artist, onLongPress = openOptions) {
+                    add(MenuEntry(song.title, detail = song.artist, song = song, onLongPress = openOptions) {
                         playAll(playable, startIndex = playable.indexOf(song))
                     })
                 } else {
@@ -322,10 +367,16 @@ class DeviceMenus(
         return buildList {
             add(MenuEntry("New Playlist…") { startNameEntry(Page.NameEntry(firstSongId = songId), "") })
             playlists.forEach { playlist ->
-                add(MenuEntry(playlist.name, detail = plural(playlist.songCount, "song")) {
-                    playlistActions.addSong(playlist.id, song)
-                    showMessage("Added to ${playlist.name}")
-                    navigation.back()
+                val alreadyIn = playlist.id in playlistsWithSong
+                add(MenuEntry(playlist.name, detail = if (alreadyIn) "Already added" else plural(playlist.songCount, "song")) {
+                    // Like YouTube Music: a song can only be in a playlist once, no "add anyway".
+                    if (alreadyIn) {
+                        showMessage("Already in ${playlist.name}")
+                    } else {
+                        playlistActions.addSong(playlist.id, song)
+                        showMessage("Added to ${playlist.name}")
+                        navigation.back()
+                    }
                 })
             }
         }

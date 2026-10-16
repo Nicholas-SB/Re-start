@@ -118,10 +118,14 @@ class SongDownloader(private val context: Context) {
         }
     }
 
-    /** Where songs are saved. Download/ is where your library already lives. */
+    /**
+     * Where songs are saved: Music/Re-start/. Android only lets apps create files in standard
+     * folders like Music, so this can't be any folder you pick (e.g. YMusic). The player always
+     * includes this folder in the library.
+     */
     @Suppress("DEPRECATION")  // still the simplest way to get the folder's path
     private fun musicFolder(): File =
-        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC), "Re-start").apply { mkdirs() }
 
     private fun JSONObject.stringOrNull(key: String): String? =
         if (has(key) && !isNull(key)) getString(key).ifBlank { null } else null

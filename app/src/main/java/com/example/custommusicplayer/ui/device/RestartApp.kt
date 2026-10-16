@@ -1,8 +1,12 @@
 package com.example.custommusicplayer.ui.device
 
+import android.Manifest
 import android.app.Activity
+import android.content.pm.PackageManager
 import android.os.SystemClock
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
@@ -26,6 +30,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -54,7 +59,9 @@ import com.example.custommusicplayer.ui.PlaylistViewModel
 import com.example.custommusicplayer.ui.StatsViewModel
 import java.time.LocalDate
 import kotlin.random.Random
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.flowOf
 
 /**
@@ -75,6 +82,8 @@ fun RestartApp(
     navigation: DeviceNavigationViewModel = viewModel(),
 ) {
     val songs by libraryViewModel.songs.collectAsStateWithLifecycle()
+    val musicFolder by libraryViewModel.musicFolder.collectAsStateWithLifecycle()
+    val folderChoices by libraryViewModel.folderChoices.collectAsStateWithLifecycle()
     val playerState by playerViewModel.uiState.collectAsStateWithLifecycle()
     val positionMs by playerViewModel.positionMs.collectAsStateWithLifecycle()
     val playlists by playlistViewModel.playlists.collectAsStateWithLifecycle()
@@ -111,6 +120,12 @@ fun RestartApp(
     val shownPlaylist by remember(shownPlaylistId) {
         shownPlaylistId?.let(playlistViewModel::observePlaylist) ?: flowOf(null)
     }.collectAsStateWithLifecycle(initialValue = null)
+
+    // On "Add to Playlist": which playlists already contain that song.
+    val songBeingAdded = (page as? Page.AddToPlaylist)?.let { songsById[it.songId] }
+    val playlistsWithSong by remember(songBeingAdded) {
+        songBeingAdded?.let(playlistViewModel::observePlaylistsContaining) ?: flowOf(emptySet())
+    }.collectAsStateWithLifecycle(initialValue = emptySet())
 
     // Lyrics start off. rememberSaveable keeps your choice while the app is "open": through the
     // screen turning off, switching apps, rotation, even Android quietly closing the app in the
@@ -153,6 +168,50 @@ fun RestartApp(
     // DisposableEffect: run cleanup when this leaves the screen (here: free the click sounds).
     DisposableEffect(feedback) { onDispose { feedback.release() } }
 
+    // "Pause for calls" needs the phone permission; ask for it when the option is turned on.
+    val askPhonePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) {
+            settings.changePauseForCalls(true)
+        } else {
+            showMessage("Needs the Phone permission (app settings)")
+        }
+    }
+    fun togglePauseForCalls() {
+        when {
+            settings.pauseForCalls -> settings.changePauseForCalls(false)
+            context.checkSelfPermission(Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED ->
+                settings.changePauseForCalls(true)
+            else -> askPhonePermission.launch(Manifest.permission.READ_PHONE_STATE)
+        }
+    }
+
+    // Scanning (holding ⏭/⏮): the music drops to a whisper under a DJ-scratch sound, then
+    // fades back in from the new spot when you let go.
+    val scope = rememberCoroutineScope()
+    var fadeIn by remember { mutableStateOf<Job?>(null) }
+    fun onScan(forward: Boolean, heldMs: Long) {
+        if (heldMs < 50) {  // the first tick of a new scan
+            fadeIn?.cancel()
+            if (settings.scratchSound) {
+                feedback.startScratch(forward)
+                playerViewModel.setVolume(0.12f)
+            }
+        }
+        // Each tick (6-7 per second) jumps 2 s; after holding 2 s, 6 s per tick.
+        val step = if (heldMs < 2_000) 2_000L else 6_000L
+        playerViewModel.seekBy(if (forward) step else -step)
+    }
+    fun onScanEnd() {
+        feedback.stopScratch()
+        fadeIn = scope.launch {
+            // From 12% back to full volume in 10 small steps (about 0.8 s).
+            for (i in 1..10) {
+                playerViewModel.setVolume(0.12f + 0.88f * i / 10)
+                delay(80)
+            }
+        }
+    }
+
     // When the downloader saves a new song, rescan so it shows up right away.
     LaunchedEffect(Unit) {
         downloadViewModel.songDownloaded.collect { libraryViewModel.rescan() }
@@ -168,12 +227,17 @@ fun RestartApp(
         playerState = playerState,
         playlists = playlists,
         shownPlaylist = shownPlaylist,
+        playlistsWithSong = playlistsWithSong,
         navigation = navigation,
         player = playerViewModel,
         playlistActions = playlistViewModel,
         mixes = mixes,
         stats = stats,
         settings = settings,
+        musicFolder = musicFolder,
+        folderChoices = folderChoices,
+        chooseMusicFolder = libraryViewModel::setMusicFolder,
+        togglePauseForCalls = ::togglePauseForCalls,
         showMessage = ::showMessage,
         startNameEntry = { namePage, initialText ->
             nameDraft = initialText
@@ -288,7 +352,8 @@ fun RestartApp(
                     DeviceHeader(
                         title = menus.title(page),
                         isPlaying = if (currentSong != null) playerState.isPlaying else null,
-                        battery = rememberBatteryLevel(),
+                        shuffle = playerState.shuffleEnabled,
+                        repeatMode = playerState.repeatMode,
                     )
                     Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                         AudioPermissionGate(modifier = Modifier.fillMaxSize()) {
@@ -308,8 +373,9 @@ fun RestartApp(
                                         navigation.select(page, index)
                                         entries[index].onLongPress?.invoke()
                                     },
+                                    artLoader = libraryViewModel.artLoader,
                                     emptyText = when (page) {
-                                        Page.Songs -> "No songs yet"
+                                        Page.Songs -> "No songs in $musicFolder.\nPick your music folder in Settings."
                                         is Page.Playlist -> "Loading…"
                                         else -> "Nothing here"
                                     },
@@ -351,11 +417,8 @@ fun RestartApp(
                         onPrevious = playerViewModel::skipToPrevious,
                         onNext = playerViewModel::skipToNext,
                         onPlayPause = playerViewModel::togglePlayPause,
-                        onScan = { forward, heldMs ->
-                            // Each tick (6-7 per second) jumps 2 s; after holding 2 s, 6 s per tick.
-                            val step = if (heldMs < 2_000) 2_000L else 6_000L
-                            playerViewModel.seekBy(if (forward) step else -step)
-                        },
+                        onScan = ::onScan,
+                        onScanEnd = ::onScanEnd,
                         feedback = feedback,
                         modifier = Modifier.fillMaxWidth(0.8f),
                     )

@@ -4,11 +4,14 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -26,36 +29,57 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.custommusicplayer.R
+import com.example.custommusicplayer.data.AlbumArtLoader
+import com.example.custommusicplayer.data.Song
+import com.example.custommusicplayer.ui.RepeatMode
+import com.example.custommusicplayer.ui.SongArt
 
 /**
  * One row in a menu. [opensSubmenu] shows a "›" like the iPod did for rows that lead deeper.
  * [onLongPress] runs when you hold the center button (or long-press the row): options.
+ * [song], if set, shows that song's cover on the left of the row.
  */
 data class MenuEntry(
     val label: String,
     val detail: String? = null,
     val opensSubmenu: Boolean = false,
+    val song: Song? = null,
     val onLongPress: (() -> Unit)? = null,
     val onSelect: () -> Unit,
 )
 
-/** The bar at the top of the screen: play state (left), page title (middle), battery (right). */
+/**
+ * The bar at the top of the screen. Left: play/pause state, plus shuffle and repeat icons
+ * while those are on. Middle: the page title.
+ */
 @Composable
-fun DeviceHeader(title: String, isPlaying: Boolean?, battery: BatteryLevel?, modifier: Modifier = Modifier) {
+fun DeviceHeader(
+    title: String,
+    isPlaying: Boolean?,  // null = nothing loaded, so no icons
+    shuffle: Boolean,
+    repeatMode: RepeatMode,
+    modifier: Modifier = Modifier,
+) {
     Box(
         modifier = modifier
             .fillMaxWidth()
             .background(DeviceColors.HeaderBar)
             .padding(horizontal = 10.dp, vertical = 6.dp),
     ) {
-        // null = nothing loaded, so no icon.
         if (isPlaying != null) {
-            Icon(
-                painterResource(if (isPlaying) R.drawable.ic_play else R.drawable.ic_pause),
-                contentDescription = if (isPlaying) "Playing" else "Paused",
-                tint = DeviceColors.Text,
-                modifier = Modifier.align(Alignment.CenterStart).size(16.dp),
-            )
+            Row(
+                modifier = Modifier.align(Alignment.CenterStart),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                StatusIcon(if (isPlaying) R.drawable.ic_play else R.drawable.ic_pause, if (isPlaying) "Playing" else "Paused")
+                if (shuffle) StatusIcon(R.drawable.ic_shuffle, "Shuffle on")
+                when (repeatMode) {
+                    RepeatMode.OFF -> {}
+                    RepeatMode.ALL -> StatusIcon(R.drawable.ic_repeat, "Repeat all")
+                    RepeatMode.ONE -> StatusIcon(R.drawable.ic_repeat_one, "Repeat one")
+                }
+            }
         }
         Text(
             title,
@@ -65,12 +89,14 @@ fun DeviceHeader(title: String, isPlaying: Boolean?, battery: BatteryLevel?, mod
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center,
-            modifier = Modifier.align(Alignment.Center).padding(horizontal = 32.dp),
+            modifier = Modifier.align(Alignment.Center).padding(horizontal = 56.dp),
         )
-        if (battery != null) {
-            BatteryIcon(battery, modifier = Modifier.align(Alignment.CenterEnd))
-        }
     }
+}
+
+@Composable
+private fun StatusIcon(icon: Int, description: String) {
+    Icon(painterResource(icon), contentDescription = description, tint = DeviceColors.Text, modifier = Modifier.size(16.dp))
 }
 
 /**
@@ -83,6 +109,7 @@ fun MenuPage(
     selectedIndex: Int,
     onTap: (index: Int) -> Unit,
     onLongTap: (index: Int) -> Unit,
+    artLoader: AlbumArtLoader,
     modifier: Modifier = Modifier,
     emptyText: String = "Nothing here",
 ) {
@@ -113,13 +140,20 @@ fun MenuPage(
                 isSelected = index == selectedIndex,
                 onClick = { onTap(index) },
                 onLongClick = { onLongTap(index) },
+                artLoader = artLoader,
             )
         }
     }
 }
 
 @Composable
-private fun MenuRow(entry: MenuEntry, isSelected: Boolean, onClick: () -> Unit, onLongClick: () -> Unit) {
+private fun MenuRow(
+    entry: MenuEntry,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+    artLoader: AlbumArtLoader,
+) {
     val background = if (isSelected) {
         Brush.verticalGradient(listOf(DeviceColors.Highlight, DeviceColors.HighlightDark))
     } else {
@@ -134,6 +168,11 @@ private fun MenuRow(entry: MenuEntry, isSelected: Boolean, onClick: () -> Unit, 
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // Song rows show the cover, so you can spot a song without remembering its title.
+        if (entry.song != null) {
+            SongArt(entry.song, artLoader, Modifier.size(42.dp))
+            Spacer(Modifier.width(10.dp))
+        }
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 entry.label,

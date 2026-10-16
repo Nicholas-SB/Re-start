@@ -43,6 +43,8 @@ class LyricsLoader(private val context: Context) {
                 ?: folder.listFiles { file ->
                     file.name.startsWith("$baseName.") && file.name.endsWith(".lrc", ignoreCase = true)
                 }?.minByOrNull { it.name }
+                // Lyrics the downloader couldn't save next to the song are kept privately.
+                ?: File(File(context.filesDir, "lyrics"), "$baseName.lrc").takeIf { it.isFile }
             lrcFile?.let { LrcParser.parse(it.readText()) }
         } catch (e: Exception) {
             null  // unreadable; fall back to embedded lyrics

@@ -57,6 +57,7 @@ fun ClickWheel(
     onNext: () -> Unit,
     onPlayPause: () -> Unit,
     onScan: (forward: Boolean, heldMs: Long) -> Unit,
+    onScanEnd: () -> Unit,
     feedback: WheelFeedback,
     modifier: Modifier = Modifier,
 ) {
@@ -71,6 +72,7 @@ fun ClickWheel(
     val next by rememberUpdatedState(onNext)
     val playPause by rememberUpdatedState(onPlayPause)
     val scan by rememberUpdatedState(onScan)
+    val scanEnd by rememberUpdatedState(onScanEnd)
 
     Box(
         modifier = modifier
@@ -136,6 +138,7 @@ fun ClickWheel(
                                     tryAwaitRelease()
                                     ticking.cancel()
                                 }
+                                scanEnd()
                             }
                         }
                     },

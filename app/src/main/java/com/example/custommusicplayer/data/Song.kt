@@ -17,4 +17,6 @@ data class Song(
     val durationMs: Long,
     val fileName: String,  // e.g. "Song I am. [Kohn9PRanoY].m4a"; stable key for playlists
     val filePath: String?, // full path on the device, used to find the .lrc file next to it
+    val dateAddedMs: Long = 0,  // when the file arrived on the phone (for downloads: the download date)
+    val folder: String = "",    // where it lives, from the storage root, e.g. "YMusic" or "Music/Re-start"
 )

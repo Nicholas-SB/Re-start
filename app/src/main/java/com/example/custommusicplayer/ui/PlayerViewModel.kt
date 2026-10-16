@@ -162,6 +162,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         controller?.seekTo(queueIndex, 0)
     }
 
+    /** The player's own volume, 0..1 (separate from the phone's volume). Used to fade. */
+    fun setVolume(volume: Float) {
+        controller?.volume = volume.coerceIn(0f, 1f)
+    }
+
     /** Jumps forward (+) or back (-) within the song, for holding ⏭ / ⏮. */
     fun seekBy(deltaMs: Long) {
         val player = controller ?: return
