@@ -16,7 +16,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.isActive
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlin.random.Random
 
@@ -65,12 +67,21 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             ContextCompat.getMainExecutor(application),  // run the callback on the UI thread
         )
 
-        // The player doesn't send an event every time the position moves, so we ask for it.
+        // The player doesn't send an event every time the position moves, so we ask for it,
+        // but only when it matters: while music is playing AND the UI is watching the
+        // position. collectAsStateWithLifecycle() stops watching when the app isn't visible
+        // (in the background, screen off), so then nothing ticks and the CPU can sleep.
+        // Seeks and pauses still update the position through onEvents -> updateState.
         viewModelScope.launch {
-            while (isActive) {
-                controller?.let { _positionMs.value = it.currentPosition }
-                delay(200)  // often enough for lyrics to switch lines on time
-            }
+            combine(_positionMs.subscriptionCount, _uiState) { watchers, state -> watchers > 0 && state.isPlaying }
+                .distinctUntilChanged()
+                // collectLatest cancels the previous loop as soon as the answer changes.
+                .collectLatest { shouldTick ->
+                    while (shouldTick) {
+                        controller?.let { _positionMs.value = it.currentPosition }
+                        delay(200)  // often enough for lyrics to switch lines on time
+                    }
+                }
         }
     }
 
