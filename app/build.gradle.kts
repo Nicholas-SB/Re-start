@@ -19,6 +19,12 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // The downloader ships Python + ffmpeg as native code for each CPU type. Only build
+        // for 64-bit phones (arm64) and the emulator (x86_64) to keep the app smaller.
+        ndk {
+            abiFilters += listOf("arm64-v8a", "x86_64")
+        }
     }
 
     buildTypes {
@@ -35,6 +41,11 @@ android {
     }
     buildFeatures {
         compose = true
+    }
+    packaging {
+        // The downloader runs yt-dlp/ffmpeg as programs, which only works if their native
+        // libraries are unpacked onto the device at install time.
+        jniLibs.useLegacyPackaging = true
     }
 }
 
@@ -55,6 +66,8 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
+    // Remove this line (and the Download tab in MusicPlayerApp) to build the player without it.
+    implementation(project(":downloader"))
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.androidx.media3.session)
     implementation(libs.androidx.media3.inspector)

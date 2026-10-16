@@ -27,9 +27,11 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.custommusicplayer.R
 import com.example.custommusicplayer.data.AlbumArtLoader
 import com.example.custommusicplayer.data.Song
+import com.example.custommusicplayer.downloader.DownloadScreen
+import com.example.custommusicplayer.downloader.DownloadViewModel
 
-/** The two tabs in the bottom navigation bar. */
-private enum class Tab { SONGS, PLAYLISTS }
+/** The tabs in the bottom navigation bar. */
+private enum class Tab { SONGS, PLAYLISTS, DOWNLOAD }
 
 /**
  * The top-level screen: wires the ViewModels to the UI and decides which screen is shown.
@@ -42,6 +44,7 @@ fun MusicPlayerApp(
     libraryViewModel: LibraryViewModel = viewModel(),
     playerViewModel: PlayerViewModel = viewModel(),
     playlistViewModel: PlaylistViewModel = viewModel(),
+    downloadViewModel: DownloadViewModel = viewModel(),
 ) {
     // Turn each StateFlow into Compose state, so the UI redraws when it changes.
     val songs by libraryViewModel.songs.collectAsStateWithLifecycle()
@@ -66,6 +69,11 @@ fun MusicPlayerApp(
     // Dialog state. songToAdd != null means "the Add to playlist dialog is open for this song".
     var songToAdd by remember { mutableStateOf<Song?>(null) }
     var showNewPlaylistDialog by remember { mutableStateOf(false) }
+
+    // When the downloader saves a new song, rescan so it shows up in the library right away.
+    LaunchedEffect(Unit) {
+        downloadViewModel.songDownloaded.collect { libraryViewModel.rescan() }
+    }
 
     // Back closes an open playlist instead of leaving the app.
     BackHandler(enabled = openPlaylistId != null) { openPlaylistId = null }
@@ -97,6 +105,12 @@ fun MusicPlayerApp(
                             onClick = { tab = Tab.PLAYLISTS; openPlaylistId = null },
                             icon = { Icon(painterResource(R.drawable.ic_playlist), contentDescription = null) },
                             label = { Text("Playlists") },
+                        )
+                        NavigationBarItem(
+                            selected = tab == Tab.DOWNLOAD,
+                            onClick = { tab = Tab.DOWNLOAD; openPlaylistId = null },
+                            icon = { Icon(painterResource(R.drawable.ic_download), contentDescription = null) },
+                            label = { Text("Download") },
                         )
                     }
                 }
@@ -131,12 +145,13 @@ fun MusicPlayerApp(
                         onAddToPlaylist = { song -> songToAdd = song },
                         modifier = contentModifier,
                     )
-                    else -> PlaylistsScreen(
+                    tab == Tab.PLAYLISTS -> PlaylistsScreen(
                         playlists = playlists,
                         onPlaylistClick = { id -> openPlaylistId = id },
                         onNewPlaylist = { songToAdd = null; showNewPlaylistDialog = true },
                         modifier = contentModifier,
                     )
+                    else -> DownloadScreen(viewModel = downloadViewModel, modifier = contentModifier)
                 }
             }
         }

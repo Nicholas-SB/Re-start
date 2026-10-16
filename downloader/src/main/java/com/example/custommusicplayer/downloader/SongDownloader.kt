@@ -1,0 +1,134 @@
+package com.example.custommusicplayer.downloader
+
+import android.content.Context
+import android.media.MediaScannerConnection
+import android.os.Environment
+import com.yausername.ffmpeg.FFmpeg
+import com.yausername.youtubedl_android.YoutubeDL
+import com.yausername.youtubedl_android.YoutubeDLRequest
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
+import java.io.File
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.coroutines.resume
+
+/**
+ * A finished download: the song file in the music folder, its details for the lyrics search,
+ * and whether that file was already there (then we keep the existing one).
+ */
+data class DownloadedSong(val file: File, val track: TrackInfo, val wasAlreadyInLibrary: Boolean)
+
+/**
+ * Runs yt-dlp on the phone with the same options as the PC command:
+ *     yt-dlp -x --audio-format m4a --embed-thumbnail --embed-metadata <link>
+ */
+class SongDownloader(private val context: Context) {
+
+    private val prefs = context.getSharedPreferences("downloader", Context.MODE_PRIVATE)
+    private var initialized = false
+
+    /**
+     * Unpacks yt-dlp and ffmpeg the first time, and updates yt-dlp at most once a day.
+     * YouTube changes often, and an old yt-dlp soon stops working.
+     */
+    suspend fun prepare(onStatus: (String) -> Unit) = withContext(Dispatchers.IO) {
+        if (!initialized) {
+            onStatus("Setting up downloader…")
+            YoutubeDL.getInstance().init(context)
+            FFmpeg.getInstance().init(context)
+            initialized = true
+        }
+        val lastUpdate = prefs.getLong(KEY_LAST_UPDATE, 0)
+        if (System.currentTimeMillis() - lastUpdate > UPDATE_INTERVAL_MS) {
+            onStatus("Updating yt-dlp…")
+            try {
+                YoutubeDL.getInstance().updateYoutubeDL(context, YoutubeDL.UpdateChannel._STABLE)
+                prefs.edit().putLong(KEY_LAST_UPDATE, System.currentTimeMillis()).apply()
+            } catch (e: Exception) {
+                // No internet or GitHub hiccup: try with the version we already have.
+            }
+        }
+    }
+
+    /** Downloads [url] into the music folder. [onProgress] gets 0–100. Throws on failure. */
+    suspend fun download(url: String, onProgress: (Float) -> Unit): DownloadedSong = withContext(Dispatchers.IO) {
+        // Work in the app's private cache, so half-finished files never show up in the library.
+        val workDir = File(context.cacheDir, "downloads").apply {
+            deleteRecursively()
+            mkdirs()
+        }
+
+        val request = YoutubeDLRequest(url).apply {
+            // Prefer YouTube's own AAC/m4a stream: it's copied as-is. Otherwise yt-dlp may pick
+            // the Opus stream and re-encode it to m4a, which makes a ~3x bigger file for no gain.
+            addOption("-f", "bestaudio[ext=m4a]/bestaudio")
+            addOption("-x")
+            addOption("--audio-format", "m4a")
+            addOption("--embed-thumbnail")
+            addOption("--embed-metadata")
+            addOption("--no-playlist")  // a song link from inside a playlist downloads just that song
+            addOption("-o", "${workDir.absolutePath}/%(title)s [%(id)s].%(ext)s")
+            // When done, print the details we need as one line of JSON.
+            // (--print normally means "don't download"; --no-simulate turns downloading back on.)
+            addOption("--print", "after_move:%(.{filepath,title,track,artist,album,uploader,duration})j")
+            addOption("--no-simulate")
+        }
+
+        val response = YoutubeDL.getInstance().execute(request, PROCESS_ID) { progress, _, _ ->
+            onProgress(progress.coerceIn(0f, 100f))
+        }
+
+        val info = JSONObject(response.out.lines().last { it.trim().startsWith("{") })
+        val downloaded = File(info.getString("filepath"))
+
+        // Move it into the music folder. (A plain rename can't cross from app storage to
+        // shared storage, so copy and then delete.) If the song is already there, keep that
+        // copy: Android doesn't let us overwrite files that another app (or the PC) put there.
+        val target = File(musicFolder(), downloaded.name)
+        val wasAlreadyInLibrary = target.exists()
+        if (!wasAlreadyInLibrary) downloaded.copyTo(target)
+        downloaded.delete()
+
+        DownloadedSong(
+            file = target,
+            track = TrackInfoParser.parse(
+                track = info.stringOrNull("track"),
+                artist = info.stringOrNull("artist"),
+                album = info.stringOrNull("album"),
+                videoTitle = info.stringOrNull("title") ?: target.nameWithoutExtension,
+                uploader = info.stringOrNull("uploader"),
+                durationSec = if (info.has("duration")) info.getDouble("duration").toInt() else null,
+            ),
+            wasAlreadyInLibrary = wasAlreadyInLibrary,
+        )
+    }
+
+    /** "<song name>.lrc" next to the song, where the player looks for lyrics. */
+    fun lyricsFileFor(song: File): File = File(song.parentFile, "${song.nameWithoutExtension}.lrc")
+
+    /** Tells Android about the new files right away, so the library shows them. */
+    suspend fun indexFiles(files: List<File>) {
+        suspendCancellableCoroutine { continuation ->
+            val remaining = AtomicInteger(files.size)
+            MediaScannerConnection.scanFile(context, files.map { it.absolutePath }.toTypedArray(), null) { _, _ ->
+                if (remaining.decrementAndGet() == 0) continuation.resume(Unit)
+            }
+        }
+    }
+
+    /** Where songs are saved. Download/ is where your library already lives. */
+    @Suppress("DEPRECATION")  // still the simplest way to get the folder's path
+    private fun musicFolder(): File =
+        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+
+    private fun JSONObject.stringOrNull(key: String): String? =
+        if (has(key) && !isNull(key)) getString(key).ifBlank { null } else null
+
+    companion object {
+        private const val PROCESS_ID = "song-download"
+        private const val KEY_LAST_UPDATE = "ytdlp_last_update"
+        private const val UPDATE_INTERVAL_MS = 24 * 60 * 60 * 1000L
+    }
+}
