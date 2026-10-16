@@ -15,10 +15,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -31,6 +33,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -143,6 +148,12 @@ fun RestartApp(
 
     val acceleration = remember { WheelAcceleration() }
 
+    // Settings, and the vibration/click the wheel makes (which depends on them).
+    val settings = remember { DeviceSettings(context) }
+    val feedback = remember { WheelFeedback(context, settings) }
+    // DisposableEffect: run cleanup when this leaves the screen (here: free the click sounds).
+    DisposableEffect(feedback) { onDispose { feedback.release() } }
+
     // When the downloader saves a new song, rescan so it shows up right away.
     LaunchedEffect(Unit) {
         downloadViewModel.songDownloaded.collect { libraryViewModel.rescan() }
@@ -163,6 +174,7 @@ fun RestartApp(
         playlistActions = playlistViewModel,
         mixes = mixes,
         stats = stats,
+        settings = settings,
         showMessage = ::showMessage,
         startNameEntry = { namePage, initialText ->
             nameDraft = initialText
@@ -258,13 +270,52 @@ fun RestartApp(
                         .weight(1f)
                         .clip(screenShape)
                         .background(DeviceColors.Screen)
+                        // A faint diagonal glare, like light catching the glass. drawWithContent
+                        // draws the screen's contents first, then the glare on top of them.
+                        .drawWithContent {
+                            drawContent()
+                            drawRect(
+                                Brush.linearGradient(
+                                    0f to Color.White.copy(alpha = 0.22f),
+                                    0.45f to Color.Transparent,
+                                    start = Offset.Zero,
+                                    end = Offset(size.width, size.height),
+                                )
+                            )
+                        }
                         .border(3.dp, DeviceColors.ScreenFrame, screenShape)
                         .padding(3.dp),  // keep content inside the frame
                 ) {
-                    DeviceHeader(title = menus.title(page), isPlaying = if (currentSong != null) playerState.isPlaying else null)
+                    DeviceHeader(
+                        title = menus.title(page),
+                        isPlaying = if (currentSong != null) playerState.isPlaying else null,
+                        battery = rememberBatteryLevel(),
+                    )
                     Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                         AudioPermissionGate(modifier = Modifier.fillMaxSize()) {
                             LaunchedEffect(Unit) { libraryViewModel.loadSongsOnce() }
+
+                            // The list shown by menu pages. A composable lambda: a piece of UI kept in
+                            // a variable, so the main menu (list + fox) and other pages can share it.
+                            val menuList: @Composable () -> Unit = {
+                                MenuPage(
+                                    entries = entries,
+                                    selectedIndex = navigation.selectedIndex(page).coerceAtMost(entries.lastIndex.coerceAtLeast(0)),
+                                    onTap = { index ->
+                                        navigation.select(page, index)
+                                        entries[index].onSelect()
+                                    },
+                                    onLongTap = { index ->
+                                        navigation.select(page, index)
+                                        entries[index].onLongPress?.invoke()
+                                    },
+                                    emptyText = when (page) {
+                                        Page.Songs -> "No songs yet"
+                                        is Page.Playlist -> "Loading…"
+                                        else -> "Nothing here"
+                                    },
+                                )
+                            }
 
                             when (page) {
                                 Page.NowPlaying -> DeviceNowPlaying(
@@ -284,23 +335,15 @@ fun RestartApp(
                                     onSave = { saveName(page) },
                                     onCancel = { navigation.back() },
                                 )
-                                else -> MenuPage(
-                                    entries = entries,
-                                    selectedIndex = navigation.selectedIndex(page).coerceAtMost(entries.lastIndex.coerceAtLeast(0)),
-                                    onTap = { index ->
-                                        navigation.select(page, index)
-                                        entries[index].onSelect()
-                                    },
-                                    onLongTap = { index ->
-                                        navigation.select(page, index)
-                                        entries[index].onLongPress?.invoke()
-                                    },
-                                    emptyText = when (page) {
-                                        Page.Songs -> "No songs yet"
-                                        is Page.Playlist -> "Loading…"
-                                        else -> "Nothing here"
-                                    },
-                                )
+                                Page.MainMenu -> Box(modifier = Modifier.fillMaxSize()) {
+                                    menuList()
+                                    // The fox naps in the corner; it wakes up while music plays.
+                                    FoxMascot(
+                                        awake = playerState.isPlaying,
+                                        modifier = Modifier.align(Alignment.BottomEnd).padding(10.dp).size(96.dp),
+                                    )
+                                }
+                                else -> menuList()
                             }
                         }
                         MessageBubble(message, Modifier.align(Alignment.BottomCenter))
@@ -322,6 +365,7 @@ fun RestartApp(
                             val step = if (heldMs < 2_000) 2_000L else 6_000L
                             playerViewModel.seekBy(if (forward) step else -step)
                         },
+                        feedback = feedback,
                         modifier = Modifier.fillMaxWidth(0.8f),
                     )
                     Spacer(Modifier.height(8.dp))

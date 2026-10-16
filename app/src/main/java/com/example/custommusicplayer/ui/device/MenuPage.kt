@@ -39,9 +39,9 @@ data class MenuEntry(
     val onSelect: () -> Unit,
 )
 
-/** The bar at the top of the screen: what's playing (left), the page title (middle). */
+/** The bar at the top of the screen: play state (left), page title (middle), battery (right). */
 @Composable
-fun DeviceHeader(title: String, isPlaying: Boolean?, modifier: Modifier = Modifier) {
+fun DeviceHeader(title: String, isPlaying: Boolean?, battery: BatteryLevel?, modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -65,8 +65,11 @@ fun DeviceHeader(title: String, isPlaying: Boolean?, modifier: Modifier = Modifi
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center,
-            modifier = Modifier.align(Alignment.Center).padding(horizontal = 24.dp),
+            modifier = Modifier.align(Alignment.Center).padding(horizontal = 32.dp),
         )
+        if (battery != null) {
+            BatteryIcon(battery, modifier = Modifier.align(Alignment.CenterEnd))
+        }
     }
 }
 

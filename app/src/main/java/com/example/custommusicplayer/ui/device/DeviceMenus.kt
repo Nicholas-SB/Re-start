@@ -28,6 +28,7 @@ class DeviceMenus(
     private val playlistActions: PlaylistViewModel,
     private val mixes: List<Mix>,
     private val stats: Map<String, SongStatsEntity>,
+    private val settings: DeviceSettings,
     private val showMessage: (String) -> Unit,
     private val startNameEntry: (page: Page.NameEntry, initialText: String) -> Unit,
 ) {
@@ -44,6 +45,7 @@ class DeviceMenus(
         is Page.Mix -> mixes.firstOrNull { it.id == page.mixId }?.title ?: "Mix"
         Page.Stats -> "Stats"
         Page.Download -> "Download"
+        Page.Settings -> "Settings"
         Page.NowPlaying -> "Now Playing"
         Page.NowPlayingOptions -> "Options"
         Page.UpNext -> "Up Next"
@@ -67,6 +69,7 @@ class DeviceMenus(
         Page.Mixes -> mixesMenu()
         is Page.Mix -> mixMenu(page.mixId)
         Page.Stats -> statsMenu()
+        Page.Settings -> settingsMenu()
         Page.NowPlayingOptions -> nowPlayingOptionsMenu()
         Page.UpNext -> upNextMenu()
         Page.Playlists -> playlistsMenu()
@@ -87,6 +90,7 @@ class DeviceMenus(
         add(MenuEntry("Shuffle Songs") { playAll(songs, shuffle = true) })
         add(MenuEntry("Stats", opensSubmenu = true) { navigation.open(Page.Stats) })
         add(MenuEntry("Download", opensSubmenu = true) { navigation.open(Page.Download) })
+        add(MenuEntry("Settings", opensSubmenu = true) { navigation.open(Page.Settings) })
         if (currentSong != null) {
             add(MenuEntry("Now Playing", detail = currentSong.title, opensSubmenu = true) { navigation.open(Page.NowPlaying) })
         }
@@ -191,6 +195,14 @@ class DeviceMenus(
             }
         }
     }
+
+    // --- Settings ---
+
+    private fun settingsMenu() = listOf(
+        MenuEntry("Clicker", detail = if (settings.clickSound) "On" else "Off") { settings.toggleClickSound() },
+        MenuEntry("Wheel vibration", detail = if (settings.vibration) "On" else "Off") { settings.toggleVibration() },
+        MenuEntry("About", detail = "Re-start · your music, your player") {},
+    )
 
     // --- Now Playing options ---
 

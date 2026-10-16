@@ -1,7 +1,6 @@
 package com.example.custommusicplayer.ui.device
 
 import android.os.SystemClock
-import android.view.HapticFeedbackConstants
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
@@ -58,6 +57,7 @@ fun ClickWheel(
     onNext: () -> Unit,
     onPlayPause: () -> Unit,
     onScan: (forward: Boolean, heldMs: Long) -> Unit,
+    feedback: WheelFeedback,
     modifier: Modifier = Modifier,
 ) {
     val view = LocalView.current
@@ -92,8 +92,7 @@ fun ClickWheel(
                         val (cx, cy) = center()
                         val steps = tracker.moveTo(WheelRotationTracker.angleOf(change.position.x, change.position.y, cx, cy))
                         if (steps != 0) {
-                            // A short, crisp vibration: Android's effect for a ticking dial.
-                            view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                            feedback.tick(view)  // vibration and/or click, per the settings
                             rotate(steps)
                         }
                     },
@@ -108,7 +107,7 @@ fun ClickWheel(
                         val button = ringButtonAt(press.x, press.y, size) ?: return@detectTapGestures
                         if (button == RingButton.MENU || button == RingButton.PLAY_PAUSE) {
                             if (tryAwaitRelease()) {
-                                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                                feedback.press(view)
                                 if (button == RingButton.MENU) menu() else playPause()
                             }
                             return@detectTapGestures
@@ -118,12 +117,12 @@ fun ClickWheel(
                         // Let go within HOLD_TO_SCAN_MS: a normal skip. Still holding: scan.
                         when (withTimeoutOrNull(HOLD_TO_SCAN_MS) { tryAwaitRelease() }) {
                             true -> {
-                                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                                feedback.press(view)
                                 if (forward) next() else previous()
                             }
                             false -> {}  // the touch became a wheel turn
                             null -> {
-                                view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                                feedback.hold(view)
                                 // Two things at once: tick the scan along, and wait for the finger
                                 // to lift. coroutineScope + launch runs the ticking alongside.
                                 coroutineScope {
@@ -176,11 +175,11 @@ fun ClickWheel(
                 .border(1.dp, DeviceColors.WheelEdge, CircleShape)
                 .combinedClickable(
                     onClick = {
-                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                        feedback.press(view)
                         onCenter()
                     },
                     onLongClick = {
-                        view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                        feedback.hold(view)
                         onCenterHold()
                     },
                 ),

@@ -21,6 +21,7 @@ sealed interface Page {
     data class Mix(val mixId: String) : Page
     data object Stats : Page
     data object Download : Page
+    data object Settings : Page
     data object NowPlaying : Page
 
     /** Hold the center on Now Playing: shuffle, repeat, up next, add to playlist. */
