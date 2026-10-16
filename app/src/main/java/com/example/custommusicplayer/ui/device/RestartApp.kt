@@ -30,6 +30,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -202,6 +203,20 @@ fun RestartApp(
         downloadViewModel.setLibrary(AppMusicLibrary(context.applicationContext))
     }
 
+    // A pinned playlist on the main menu: load its songs, shuffle them (from a random one).
+    val scope = rememberCoroutineScope()
+    fun shufflePlaylist(playlistId: Long) {
+        scope.launch {
+            val playlistSongs = playlistViewModel.songFileNames(playlistId).mapNotNull { songsByFileName[it] }
+            if (playlistSongs.isEmpty()) {
+                showMessage("No songs in that playlist yet")
+                return@launch
+            }
+            playerViewModel.shuffleAll(playlistSongs)
+            navigation.open(Page.NowPlaying)
+        }
+    }
+
     // --- What each page shows ---
 
     val menus = DeviceMenus(
@@ -228,6 +243,7 @@ fun RestartApp(
             nameDraft = initialText
             navigation.open(namePage)
         },
+        shufflePlaylist = ::shufflePlaylist,
     )
     val entries = menus.entries(page)
 

@@ -1,6 +1,5 @@
 package com.example.custommusicplayer.ui.device
 
-import com.example.custommusicplayer.data.MusicScanner
 import com.example.custommusicplayer.data.Song
 import com.example.custommusicplayer.data.db.PlaylistSummary
 import com.example.custommusicplayer.data.db.SongStatsEntity
@@ -37,16 +36,13 @@ class DeviceMenus(
     private val togglePauseForCalls: () -> Unit,
     private val showMessage: (String) -> Unit,
     private val startNameEntry: (page: Page.NameEntry, initialText: String) -> Unit,
+    private val shufflePlaylist: (playlistId: Long) -> Unit,
 ) {
 
     fun title(page: Page): String = when (page) {
         Page.MainMenu -> "Re-start"
         Page.Music -> "Music"
         Page.Songs -> "Songs"
-        Page.Artists -> "Artists"
-        is Page.Artist -> page.name
-        Page.Albums -> "Albums"
-        is Page.Album -> page.name
         Page.Mixes -> "Mixes"
         is Page.Mix -> mixes.firstOrNull { it.id == page.mixId }?.title ?: "Mix"
         Page.Stats -> "Stats"
@@ -70,10 +66,6 @@ class DeviceMenus(
         Page.MainMenu -> mainMenu()
         Page.Music -> musicMenu()
         Page.Songs -> songsMenu()
-        Page.Artists -> artistsMenu()
-        is Page.Artist -> songListMenu(songs.filter { it.artist == page.name }, withShuffle = true)
-        Page.Albums -> albumsMenu()
-        is Page.Album -> songListMenu(songs.filter { it.album == page.name }, withShuffle = true)
         Page.Mixes -> mixesMenu()
         is Page.Mix -> mixMenu(page.mixId)
         Page.Stats -> statsMenu()
@@ -97,6 +89,16 @@ class DeviceMenus(
         add(MenuEntry("Music", opensSubmenu = true) { navigation.open(Page.Music) })
         add(MenuEntry("Mixes", opensSubmenu = true) { navigation.open(Page.Mixes) })
         add(MenuEntry("Shuffle Songs") { playAll(songs, shuffle = true) })
+        // Pinned playlists: one click shuffles them. Hold the center for the playlist's options.
+        playlists.filter { it.pinned }.forEach { playlist ->
+            add(
+                MenuEntry(
+                    playlist.name,
+                    detail = "Shuffle · ${plural(playlist.songCount, "song")}",
+                    onLongPress = { navigation.open(Page.PlaylistOptions(playlist.id)) },
+                ) { shufflePlaylist(playlist.id) }
+            )
+        }
         add(MenuEntry("Stats", opensSubmenu = true) { navigation.open(Page.Stats) })
         add(MenuEntry("Download", opensSubmenu = true) { navigation.open(Page.Download) })
         add(MenuEntry("Settings", opensSubmenu = true) { navigation.open(Page.Settings) })
@@ -107,12 +109,6 @@ class DeviceMenus(
 
     private fun musicMenu() = listOf(
         MenuEntry("Songs", detail = plural(songs.size, "song"), opensSubmenu = true) { navigation.open(Page.Songs) },
-        MenuEntry("Artists", detail = plural(songs.map { it.artist }.distinct().size, "artist"), opensSubmenu = true) {
-            navigation.open(Page.Artists)
-        },
-        MenuEntry("Albums", detail = plural(songs.map { it.album }.distinct().size, "album"), opensSubmenu = true) {
-            navigation.open(Page.Albums)
-        },
         MenuEntry("Playlists", detail = plural(playlists.size, "playlist"), opensSubmenu = true) { navigation.open(Page.Playlists) },
     )
 
@@ -128,11 +124,10 @@ class DeviceMenus(
     }
 
     /**
-     * A list of songs: choosing one plays the whole list from there. Used by Songs, an
-     * artist, an album and a mix. Holding the center offers "Add to Playlist".
+     * A list of songs: choosing one plays the whole list from there. Used by Songs, a mix and
+     * Stats. Holding the center offers "Add to Playlist".
      */
-    private fun songListMenu(list: List<Song>, withShuffle: Boolean = false) = buildList {
-        if (withShuffle && list.size > 1) add(MenuEntry("Shuffle") { playAll(list, shuffle = true) })
+    private fun songListMenu(list: List<Song>) = buildList {
         list.forEachIndexed { index, song ->
             add(
                 MenuEntry(
@@ -142,36 +137,6 @@ class DeviceMenus(
                     onLongPress = { navigation.open(Page.AddToPlaylist(song.id)) },
                 ) { playAll(list, startIndex = index) }
             )
-        }
-    }
-
-    // --- Artists and albums ---
-
-    /** Every artist, A to Z (ignoring upper/lower case). */
-    private fun artistsMenu() = songs
-        .groupBy { it.artist }
-        .toSortedMap(String.CASE_INSENSITIVE_ORDER)
-        .map { (artist, artistSongs) ->
-            MenuEntry(artist, detail = plural(artistSongs.size, "song"), opensSubmenu = true) { navigation.open(Page.Artist(artist)) }
-        }
-
-    /** Every album, A to Z, with songs that have no album tag collected at the end. */
-    private fun albumsMenu(): List<MenuEntry> {
-        val byAlbum = songs.groupBy { it.album }
-        val named = (byAlbum - MusicScanner.UNKNOWN_ALBUM).toSortedMap(String.CASE_INSENSITIVE_ORDER)
-        val unknown = byAlbum[MusicScanner.UNKNOWN_ALBUM]
-        return buildList {
-            named.forEach { (album, albumSongs) ->
-                val artists = albumSongs.map { it.artist }.distinct()
-                add(MenuEntry(album, detail = artists.singleOrNull() ?: "Various artists", opensSubmenu = true) {
-                    navigation.open(Page.Album(album))
-                })
-            }
-            if (unknown != null) {
-                add(MenuEntry(MusicScanner.UNKNOWN_ALBUM, detail = plural(unknown.size, "song"), opensSubmenu = true) {
-                    navigation.open(Page.Album(MusicScanner.UNKNOWN_ALBUM))
-                })
-            }
         }
     }
 
@@ -324,6 +289,11 @@ class DeviceMenus(
                 add(MenuEntry("Play") { playAll(playable) })
                 add(MenuEntry("Shuffle") { playAll(playable, shuffle = true) })
             }
+            val pinned = playlists.firstOrNull { it.id == playlistId }?.pinned == true
+            add(MenuEntry(if (pinned) "Unpin from Main Menu" else "Pin to Main Menu") {
+                playlistActions.setPinned(playlistId, !pinned)
+                showMessage(if (pinned) "Unpinned $name" else "Pinned $name to the main menu")
+            })
             add(MenuEntry("Rename…") { startNameEntry(Page.NameEntry(renamePlaylistId = playlistId), name) })
             add(MenuEntry("Delete…") { navigation.open(Page.ConfirmDelete(playlistId)) })
         }

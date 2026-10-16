@@ -13,10 +13,6 @@ sealed interface Page {
     data object MainMenu : Page
     data object Music : Page
     data object Songs : Page
-    data object Artists : Page
-    data class Artist(val name: String) : Page
-    data object Albums : Page
-    data class Album(val name: String) : Page
     data object Mixes : Page
     data class Mix(val mixId: String) : Page
     data object Stats : Page

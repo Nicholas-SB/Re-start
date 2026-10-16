@@ -1,5 +1,6 @@
 package com.example.custommusicplayer.data.db
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -15,6 +16,9 @@ data class PlaylistEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
     val createdAt: Long = System.currentTimeMillis(),
+    // Shown on the main menu. The default value is for playlists made before this column
+    // existed (the migration needs it to fill them in).
+    @ColumnInfo(defaultValue = "0") val pinned: Boolean = false,
 )
 
 /**
@@ -48,4 +52,5 @@ data class PlaylistSummary(
     val id: Long,
     val name: String,
     val songCount: Int,
+    val pinned: Boolean,
 )

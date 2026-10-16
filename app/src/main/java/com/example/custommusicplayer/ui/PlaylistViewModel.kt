@@ -55,6 +55,13 @@ class PlaylistViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch { dao.renamePlaylist(playlistId, name.trim()) }
     }
 
+    fun setPinned(playlistId: Long, pinned: Boolean) {
+        viewModelScope.launch { dao.setPinned(playlistId, pinned) }
+    }
+
+    /** The playlist's songs (their file names), in order. */
+    suspend fun songFileNames(playlistId: Long): List<String> = dao.getEntries(playlistId).map { it.songFileName }
+
     fun deletePlaylist(playlistId: Long) {
         viewModelScope.launch { dao.deletePlaylist(playlistId) }
     }

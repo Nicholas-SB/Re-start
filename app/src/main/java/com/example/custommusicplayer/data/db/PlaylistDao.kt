@@ -21,7 +21,7 @@ interface PlaylistDao {
 
     @Query(
         """
-        SELECT p.id, p.name, COUNT(s.id) AS songCount
+        SELECT p.id, p.name, COUNT(s.id) AS songCount, p.pinned
         FROM playlists p LEFT JOIN playlist_songs s ON s.playlistId = p.id
         GROUP BY p.id
         ORDER BY p.name COLLATE NOCASE
@@ -41,6 +41,9 @@ interface PlaylistDao {
 
     @Query("UPDATE playlists SET name = :name WHERE id = :playlistId")
     suspend fun renamePlaylist(playlistId: Long, name: String)
+
+    @Query("UPDATE playlists SET pinned = :pinned WHERE id = :playlistId")
+    suspend fun setPinned(playlistId: Long, pinned: Boolean)
 
     @Query("DELETE FROM playlists WHERE id = :playlistId")
     suspend fun deletePlaylist(playlistId: Long)
