@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Re-start icon, front layer: a little player with fox ears.
+    Re-start icon, front layer: a little player.
     The launcher crops icons to different shapes, so everything stays inside the middle
     66 x 66 "safe zone" of this 108 x 108 canvas (center 54,54).
 -->
@@ -9,11 +9,6 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Fox ears, drawn first so the body covers their base. -->
-    <path android:fillColor="#C98B5A" android:pathData="M39,33L43,26.5L49,32.5Z" />
-    <path android:fillColor="#C98B5A" android:pathData="M59,32.5L65,26.5L69,33Z" />
-    <path android:fillColor="#8E5D3C" android:pathData="M41.5,32L43.3,29L46.5,32Z" />
-    <path android:fillColor="#8E5D3C" android:pathData="M61.5,32L64.7,29L66.5,32Z" />
     <!-- Silver body. -->
     <path
         android:fillColor="#EFECE6"
