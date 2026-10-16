@@ -13,7 +13,20 @@ sealed interface Page {
     data object MainMenu : Page
     data object Music : Page
     data object Songs : Page
+    data object Artists : Page
+    data class Artist(val name: String) : Page
+    data object Albums : Page
+    data class Album(val name: String) : Page
+    data object Mixes : Page
+    data class Mix(val mixId: String) : Page
+    data object Stats : Page
+    data object Download : Page
     data object NowPlaying : Page
+
+    /** Hold the center on Now Playing: shuffle, repeat, up next, add to playlist. */
+    data object NowPlayingOptions : Page
+    data object UpNext : Page
+
     data object Playlists : Page
     data class Playlist(val playlistId: Long) : Page
 

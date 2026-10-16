@@ -4,7 +4,9 @@ import android.os.Build
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -37,7 +39,7 @@ import kotlinx.coroutines.launch
  * and, if LRCLIB has them, synced lyrics are saved next to it.
  */
 @Composable
-fun DownloadScreen(viewModel: DownloadViewModel, modifier: Modifier = Modifier) {
+fun DownloadScreen(viewModel: DownloadViewModel, modifier: Modifier = Modifier, showTitle: Boolean = true) {
     val jobs by viewModel.jobs.collectAsStateWithLifecycle()
     var link by rememberSaveable { mutableStateOf("") }
     val clipboard = LocalClipboard.current
@@ -46,7 +48,11 @@ fun DownloadScreen(viewModel: DownloadViewModel, modifier: Modifier = Modifier) 
 
     LazyColumn(modifier = modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         item {
-            Text("Download", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(top = 16.dp, bottom = 12.dp))
+            if (showTitle) {
+                Text("Download", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(top = 16.dp, bottom = 12.dp))
+            } else {
+                Spacer(Modifier.height(12.dp))
+            }
 
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
                 Text("Downloading needs Android 10 or newer.", color = MaterialTheme.colorScheme.error)

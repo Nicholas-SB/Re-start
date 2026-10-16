@@ -72,7 +72,6 @@ dependencies {
     implementation(libs.androidx.media3.session)
     implementation(libs.androidx.media3.inspector)
     implementation(libs.androidx.room.runtime)
-    implementation(libs.androidx.palette)  // picks the main colors out of cover art
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
     testImplementation(libs.junit)

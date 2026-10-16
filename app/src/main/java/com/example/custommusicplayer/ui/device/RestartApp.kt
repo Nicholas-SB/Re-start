@@ -40,13 +40,16 @@ import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.custommusicplayer.data.mixes.MixGenerator
+import com.example.custommusicplayer.downloader.DownloadScreen
 import com.example.custommusicplayer.downloader.DownloadViewModel
 import com.example.custommusicplayer.ui.AudioPermissionGate
 import com.example.custommusicplayer.ui.LibraryViewModel
-import com.example.custommusicplayer.ui.MusicPlayerApp
 import com.example.custommusicplayer.ui.PlayerViewModel
 import com.example.custommusicplayer.ui.PlaylistViewModel
-import com.example.custommusicplayer.ui.theme.CustomMusicPlayerTheme
+import com.example.custommusicplayer.ui.StatsViewModel
+import java.time.LocalDate
+import kotlin.random.Random
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.flowOf
 
@@ -55,14 +58,15 @@ import kotlinx.coroutines.flow.flowOf
  * Now Playing; the click wheel below drives everything.
  *
  * This function owns the "what does the wheel do here?" decisions and the layout.
- * DeviceMenus decides what each menu lists; MenuPage, DeviceNowPlaying and NameEntryPage
- * only draw; the ClickWheel only reports gestures.
+ * DeviceMenus decides what each menu lists; MenuPage, DeviceNowPlaying, NameEntryPage and
+ * the downloader's screen only draw; the ClickWheel only reports gestures.
  */
 @Composable
 fun RestartApp(
     libraryViewModel: LibraryViewModel = viewModel(),
     playerViewModel: PlayerViewModel = viewModel(),
     playlistViewModel: PlaylistViewModel = viewModel(),
+    statsViewModel: StatsViewModel = viewModel(),
     downloadViewModel: DownloadViewModel = viewModel(),
     navigation: DeviceNavigationViewModel = viewModel(),
 ) {
@@ -70,10 +74,25 @@ fun RestartApp(
     val playerState by playerViewModel.uiState.collectAsStateWithLifecycle()
     val positionMs by playerViewModel.positionMs.collectAsStateWithLifecycle()
     val playlists by playlistViewModel.playlists.collectAsStateWithLifecycle()
+    val stats by statsViewModel.stats.collectAsStateWithLifecycle()
+    val playsLast30Days by statsViewModel.playsLast30Days.collectAsStateWithLifecycle()
 
     val songsById = remember(songs) { songs.associateBy { it.id } }
     val songsByFileName = remember(songs) { songs.associateBy { it.fileName } }
     val currentSong = playerState.currentSongId?.let { songsById[it] }
+
+    // Mixes, rebuilt when the library or stats change. Seeded by today's date, so the random
+    // ones stay the same all day and change tomorrow.
+    val today = LocalDate.now().toEpochDay()
+    val mixes = remember(songsByFileName, stats, playsLast30Days, today) {
+        MixGenerator.generate(
+            songFileNames = songsByFileName.keys.toList(),
+            stats = stats,
+            playsLast30Days = playsLast30Days,
+            now = System.currentTimeMillis(),
+            random = Random(today),
+        )
+    }
 
     val page = navigation.currentPage
 
@@ -88,9 +107,6 @@ fun RestartApp(
     val shownPlaylist by remember(shownPlaylistId) {
         shownPlaylistId?.let(playlistViewModel::observePlaylist) ?: flowOf(null)
     }.collectAsStateWithLifecycle(initialValue = null)
-
-    // Temporary: the previous (YouTube Music-style) UI, for features not moved over yet.
-    var showClassic by rememberSaveable { mutableStateOf(false) }
 
     // Lyrics start off. rememberSaveable keeps your choice while the app is "open": through the
     // screen turning off, switching apps, rotation, even Android quietly closing the app in the
@@ -139,17 +155,19 @@ fun RestartApp(
         songsById = songsById,
         songsByFileName = songsByFileName,
         currentSong = currentSong,
+        playerState = playerState,
         playlists = playlists,
         shownPlaylist = shownPlaylist,
         navigation = navigation,
         player = playerViewModel,
         playlistActions = playlistViewModel,
+        mixes = mixes,
+        stats = stats,
         showMessage = ::showMessage,
         startNameEntry = { namePage, initialText ->
             nameDraft = initialText
             navigation.open(namePage)
         },
-        openClassicView = { showClassic = true },
     )
     val entries = menus.entries(page)
 
@@ -187,7 +205,7 @@ fun RestartApp(
                 volumeFraction = volume.fraction
                 lastVolumeChange = SystemClock.uptimeMillis()
             }
-            is Page.NameEntry -> {}  // nothing to scroll
+            is Page.NameEntry, Page.Download -> {}  // nothing to scroll
             else -> {
                 val moved = acceleration.apply(steps, SystemClock.uptimeMillis())
                 navigation.moveSelection(current, moved, currentEntries.size)
@@ -199,6 +217,7 @@ fun RestartApp(
         when (val current = navigation.currentPage) {
             Page.NowPlaying -> showLyrics = !showLyrics
             is Page.NameEntry -> saveName(current)
+            Page.Download -> {}  // the download page is used by touch
             else -> currentEntries.getOrNull(navigation.selectedIndex(current))?.onSelect?.invoke()
         }
     }
@@ -206,16 +225,16 @@ fun RestartApp(
     /** Holding the center: options for whatever is highlighted (or playing). */
     fun onCenterHold() {
         when (val current = navigation.currentPage) {
-            Page.NowPlaying -> latestSong?.let { navigation.open(Page.AddToPlaylist(it.id)) }
-            is Page.NameEntry -> {}
+            Page.NowPlaying -> if (latestSong != null) navigation.open(Page.NowPlayingOptions)
+            is Page.NameEntry, Page.Download -> {}
             else -> currentEntries.getOrNull(navigation.selectedIndex(current))?.onLongPress?.invoke()
         }
     }
 
     // The phone's back gesture works like MENU.
-    BackHandler(enabled = navigation.canGoBack && !showClassic) { navigation.back() }
+    BackHandler(enabled = navigation.canGoBack) { navigation.back() }
 
-    StatusBarIcons(darkIcons = !showClassic)
+    StatusBarIcons()
 
     // While typing, the keyboard takes the wheel's place.
     val keyboardOpen = WindowInsets.ime.getBottom(LocalDensity.current) > 0
@@ -258,6 +277,7 @@ fun RestartApp(
                                     volumeFraction = volumeFraction,
                                     onSeek = playerViewModel::seekTo,
                                 )
+                                Page.Download -> DownloadScreen(viewModel = downloadViewModel, showTitle = false)
                                 is Page.NameEntry -> NameEntryPage(
                                     name = nameDraft,
                                     onNameChange = { nameDraft = it },
@@ -303,13 +323,6 @@ fun RestartApp(
                 }
             }
         }
-
-        if (showClassic) {
-            // Registered before the classic UI's own back handlers, so those win while they're
-            // active (e.g. closing its Now Playing first); otherwise back returns to the device.
-            BackHandler { showClassic = false }
-            CustomMusicPlayerTheme { MusicPlayerApp() }
-        }
     }
 }
 
@@ -330,17 +343,17 @@ private fun MessageBubble(text: String?, modifier: Modifier = Modifier) {
 }
 
 /**
- * Dark status/navigation bar icons on our light body, light ones on the dark classic UI.
+ * Dark status/navigation bar icons, so they show up on the light silver body.
  * SideEffect runs after every successful redraw, to sync something outside Compose.
  */
 @Composable
-private fun StatusBarIcons(darkIcons: Boolean) {
+private fun StatusBarIcons() {
     val view = LocalView.current
     SideEffect {
         val window = (view.context as Activity).window
         WindowCompat.getInsetsController(window, view).apply {
-            isAppearanceLightStatusBars = darkIcons
-            isAppearanceLightNavigationBars = darkIcons
+            isAppearanceLightStatusBars = true
+            isAppearanceLightNavigationBars = true
         }
     }
 }

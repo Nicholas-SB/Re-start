@@ -49,6 +49,12 @@ private val ScreenColorScheme = lightColorScheme(
     onSurface = DeviceColors.Text,
     surfaceVariant = DeviceColors.HeaderBar,
     onSurfaceVariant = DeviceColors.TextSoft,
+    // Cards (e.g. on the Download page) and dialogs use the "surfaceContainer" roles.
+    surfaceContainerLowest = DeviceColors.Screen,
+    surfaceContainerLow = DeviceColors.Screen,
+    surfaceContainer = DeviceColors.HeaderBar,
+    surfaceContainerHigh = DeviceColors.HeaderBar,
+    surfaceContainerHighest = DeviceColors.HeaderBar,
     outline = DeviceColors.TextSoft,
 )
 
