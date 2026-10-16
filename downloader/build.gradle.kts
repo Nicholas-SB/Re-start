@@ -30,6 +30,8 @@ dependencies {
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.activity.compose)  // asking for the notification permission
+    implementation(libs.androidx.core.ktx)          // notifications
 
     // yt-dlp (with its own Python) and ffmpeg, packaged for Android.
     implementation(libs.youtubedl.library)

@@ -141,6 +141,21 @@ class MusicScanner(private val context: Context) {
         fun isInFolder(folder: String, chosen: String): Boolean =
             folder == chosen || folder.startsWith("$chosen/")
 
+        /** The library: the chosen music folder, plus the downloads folder. */
+        fun isInLibrary(song: Song, chosenFolder: String): Boolean =
+            isInFolder(song.folder, chosenFolder) || isInFolder(song.folder, DOWNLOADS_FOLDER)
+
+        /** The music folder picked in Settings (saved, so it survives closing the app). */
+        fun chosenFolder(context: Context): String =
+            prefs(context).getString(KEY_FOLDER, null) ?: DEFAULT_FOLDER
+
+        fun saveChosenFolder(context: Context, folder: String) {
+            prefs(context).edit().putString(KEY_FOLDER, folder).apply()
+        }
+
+        private fun prefs(context: Context) = context.getSharedPreferences("library", Context.MODE_PRIVATE)
+        private const val KEY_FOLDER = "music_folder"
+
         private const val SCAN_TIMEOUT_MS = 30_000L
     }
 }

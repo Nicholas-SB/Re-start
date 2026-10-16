@@ -1,7 +1,6 @@
 package com.example.custommusicplayer.ui
 
 import android.app.Application
-import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.custommusicplayer.data.AlbumArtLoader
@@ -35,8 +34,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     val lyricsLoader = LyricsLoader(application)
 
     // The chosen music folder, saved so it survives closing the app.
-    private val prefs = application.getSharedPreferences("library", Context.MODE_PRIVATE)
-    private val _musicFolder = MutableStateFlow(prefs.getString(KEY_FOLDER, null) ?: MusicScanner.DEFAULT_FOLDER)
+    private val _musicFolder = MutableStateFlow(MusicScanner.chosenFolder(application))
     val musicFolder: StateFlow<String> = _musicFolder.asStateFlow()
 
     // Pattern: a private *Mutable* flow we write to, exposed publicly as read-only.
@@ -46,9 +44,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
 
     /** The library: songs in the chosen folder, plus the downloads folder. */
     val songs: StateFlow<List<Song>> = combine(allSongs, _musicFolder) { all, folder ->
-        all.filter {
-            MusicScanner.isInFolder(it.folder, folder) || MusicScanner.isInFolder(it.folder, MusicScanner.DOWNLOADS_FOLDER)
-        }
+        all.filter { MusicScanner.isInLibrary(it, folder) }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     /** Top-level folders that contain audio (biggest first), to pick from in Settings. */
@@ -89,11 +85,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     /** Switch the library to another folder (e.g. "YMusic"). */
     fun setMusicFolder(folder: String) {
         _musicFolder.value = folder
-        prefs.edit().putString(KEY_FOLDER, folder).apply()
+        MusicScanner.saveChosenFolder(getApplication(), folder)
         rescan()
-    }
-
-    private companion object {
-        const val KEY_FOLDER = "music_folder"
     }
 }

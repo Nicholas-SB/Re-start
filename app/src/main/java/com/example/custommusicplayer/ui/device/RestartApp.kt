@@ -49,7 +49,7 @@ import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.custommusicplayer.data.mixes.MixGenerator
-import com.example.custommusicplayer.data.db.DatabasePlaylistWriter
+import com.example.custommusicplayer.data.AppMusicLibrary
 import com.example.custommusicplayer.downloader.DownloadScreen
 import com.example.custommusicplayer.downloader.DownloadViewModel
 import com.example.custommusicplayer.downloader.PlaylistChoice
@@ -197,9 +197,9 @@ fun RestartApp(
     LaunchedEffect(Unit) {
         downloadViewModel.songDownloaded.collect { libraryViewModel.rescan() }
     }
-    // Let playlist imports write into our database.
+    // Let playlist imports see our songs and write into our playlists.
     LaunchedEffect(downloadViewModel) {
-        downloadViewModel.playlistWriter = DatabasePlaylistWriter(context.applicationContext)
+        downloadViewModel.setLibrary(AppMusicLibrary(context.applicationContext))
     }
 
     // --- What each page shows ---

@@ -1,21 +1,28 @@
 package com.example.custommusicplayer.downloader
 
 import java.net.URI
+import kotlin.math.abs
 
 /**
- * How imported songs end up in a playlist. Playlists live in the player's database, which this
- * module can't see, so the app hands in an implementation (see DatabasePlaylistWriter).
+ * What the downloader needs from the player's library. Songs and playlists live in the app
+ * module, which this module can't see, so the app hands in an implementation (AppMusicLibrary).
  *
  * It's the same idea as a Java interface used to keep two parts apart: the downloader only
- * knows these two calls, not Room or the player.
+ * knows these three calls, not Room or MediaStore.
  */
-interface PlaylistWriter {
+interface MusicLibrary {
+    /** The songs in your library right now (what the player shows). */
+    suspend fun songs(): List<LibrarySong>
+
     /** Creates an empty playlist and returns its id. */
     suspend fun createPlaylist(name: String): Long
 
-    /** Adds a song at the end of the playlist (skipped if it's already in it). */
-    suspend fun addSong(playlistId: Long, songFileName: String)
+    /** Adds a song at the end of the playlist. Returns false if it was already in it. */
+    suspend fun addSong(playlistId: Long, songFileName: String): Boolean
 }
+
+/** A song already on the phone, as far as matching is concerned. */
+data class LibrarySong(val fileName: String, val title: String, val artist: String, val durationMs: Long)
 
 /** Where an imported playlist's songs go. */
 sealed interface ImportTarget {
@@ -30,7 +37,34 @@ data class PlaylistChoice(val id: Long, val name: String)
 /** A playlist as listed by yt-dlp: its name and its songs, in order. */
 data class YoutubePlaylist(val title: String, val songs: List<PlaylistSong>)
 
-data class PlaylistSong(val videoId: String, val title: String)
+/** One song of a YouTube playlist. [artist] is the channel ("X - Topic" becomes "X"). */
+data class PlaylistSong(val videoId: String, val title: String, val artist: String? = null, val durationSec: Int? = null)
+
+/**
+ * Finds [wanted] among the songs already on the phone, so it isn't downloaded twice.
+ * Returns the matching file's name, or null.
+ *
+ *  1. Songs downloaded with yt-dlp have the video id in their file name: "Title [id].m4a".
+ *  2. Otherwise (e.g. songs from another app), the same title, plus the same artist or a
+ *     length within 3 seconds. Title alone isn't enough: covers often share the name.
+ */
+fun findInLibrary(library: List<LibrarySong>, wanted: PlaylistSong): String? {
+    library.firstOrNull { "[${wanted.videoId}]." in it.fileName }?.let { return it.fileName }
+
+    val title = wanted.title.normalized()
+    val artist = wanted.artist?.normalized()
+    return library.firstOrNull { song ->
+        val sameArtist = artist != null && song.artist.normalized() == artist
+        val sameLength = wanted.durationSec != null && song.durationMs > 0 &&
+            abs(song.durationMs / 1000 - wanted.durationSec) <= 3
+        song.title.normalized() == title && (sameArtist || sameLength)
+    }?.fileName
+}
+
+/** "  As  It Was " and "as it was" count as the same. */
+private fun String.normalized() = lowercase().replace(whitespace, " ").trim()
+
+private val whitespace = Regex("\\s+")
 
 /**
  * A checked YouTube / YouTube Music playlist link, reduced to its ids. The links handed to

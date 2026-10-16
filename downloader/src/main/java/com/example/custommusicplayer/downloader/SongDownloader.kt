@@ -3,7 +3,6 @@ package com.example.custommusicplayer.downloader
 import android.content.Context
 import android.media.MediaScannerConnection
 import android.os.Environment
-import android.provider.MediaStore
 import com.yausername.ffmpeg.FFmpeg
 import com.yausername.youtubedl_android.YoutubeDL
 import com.yausername.youtubedl_android.YoutubeDLRequest
@@ -123,30 +122,17 @@ class SongDownloader(private val context: Context) {
             val entry = entries!!.getJSONObject(index)
             val videoId = entry.optString("id")
             val title = entry.stringOrNull("title") ?: videoId
-            PlaylistSong(videoId, title).takeIf { isVideoId(videoId) && title !in unavailableTitles }
+            val song = PlaylistSong(
+                videoId = videoId,
+                title = title,
+                artist = entry.stringOrNull("channel")?.removeSuffix(" - Topic"),  // YouTube Music artists' channels
+                durationSec = if (entry.has("duration") && !entry.isNull("duration")) entry.getDouble("duration").toInt() else null,
+            )
+            song.takeIf { isVideoId(videoId) && title !in unavailableTitles }
         }
         // YouTube Music albums are called "Album - <name>" on YouTube; just "<name>" reads better.
         val title = info.stringOrNull("title")?.removePrefix("Album - ") ?: "YouTube playlist"
         YoutubePlaylist(title, songs)
-    }
-
-    /**
-     * Finds a song that's already on the phone by its YouTube id, which yt-dlp puts in the
-     * file name ("Title [id].m4a"). Returns its file name, or null.
-     */
-    fun findInLibrary(videoId: String): String? {
-        val nameColumn = MediaStore.Audio.Media.DISPLAY_NAME
-        // In LIKE, "_" means "any one character", so this can match a bit too much; the exact
-        // check on each result below sorts that out.
-        context.contentResolver.query(
-            MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, arrayOf(nameColumn), "$nameColumn LIKE ?", arrayOf("%[$videoId].%"), null,
-        )?.use { cursor ->
-            while (cursor.moveToNext()) {
-                val name = cursor.getString(0) ?: continue
-                if (name.contains("[$videoId].")) return name
-            }
-        }
-        return null
     }
 
     /** "<song name>.lrc" next to the song, where the player looks for lyrics. */

@@ -1,6 +1,10 @@
 package com.example.custommusicplayer.downloader
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,9 +37,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 
@@ -55,6 +61,7 @@ fun DownloadScreen(
     var link by rememberSaveable { mutableStateOf("") }
     val kind = linkKind(link)
     val isPlaylist = isWholePlaylist(link)
+    val askForNotifications = rememberNotificationPermission()
 
     LazyColumn(modifier = modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         item {
@@ -78,6 +85,7 @@ fun DownloadScreen(
             }
             Button(
                 onClick = {
+                    askForNotifications()
                     viewModel.download(link)
                     link = ""
                 },
@@ -113,6 +121,7 @@ fun PlaylistImportScreen(viewModel: DownloadViewModel, playlists: List<PlaylistC
     var chosenId by rememberSaveable { mutableStateOf<Long?>(null) }
     val chosen = playlists.firstOrNull { it.id == chosenId }  // also null if it was deleted meanwhile
     val playlist = playlistLink(link)
+    val askForNotifications = rememberNotificationPermission()
 
     LazyColumn(modifier = modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         item {
@@ -147,6 +156,7 @@ fun PlaylistImportScreen(viewModel: DownloadViewModel, playlists: List<PlaylistC
                     } else {
                         ImportTarget.NewPlaylist(newName)
                     }
+                    askForNotifications()
                     viewModel.importPlaylist(link, target)
                     link = ""
                     newName = ""
@@ -159,6 +169,23 @@ fun PlaylistImportScreen(viewModel: DownloadViewModel, playlists: List<PlaylistC
         }
         items(jobs, key = { it.id }) { job ->
             DownloadJobCard(job)
+        }
+    }
+}
+
+/**
+ * Returns a function that asks for permission to show notifications (Android 13+), so the
+ * download progress can appear there. Downloads work either way.
+ */
+@Composable
+private fun rememberNotificationPermission(): () -> Unit {
+    val context = LocalContext.current
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    return {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
     }
 }
@@ -254,11 +281,18 @@ private fun DownloadJobCard(job: DownloadJob) {
                             if (status.finished < status.total) {
                                 "Into ${status.playlistName} · ${status.finished} of ${status.total} songs"
                             } else {
-                                "Done · ${status.added} of ${status.total} songs in ${status.playlistName}"
+                                playlistSummary(status)
                             }
                     },
                     style = MaterialTheme.typography.bodyMedium,
                     color = if (status is DownloadStatus.Failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (status is DownloadStatus.PlaylistProgress && status.finished == status.total && status.failedTitles.isNotEmpty()) {
+                Text(
+                    "Couldn't download:\n" + status.failedTitles.joinToString("\n") { "• $it" },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
                 )
             }
             when (status) {
@@ -273,4 +307,20 @@ private fun DownloadJobCard(job: DownloadJob) {
             }
         }
     }
+}
+
+/** e.g. "Done · 3 downloaded, 8 already on your phone
+Added 5 to Gym · 6 were already in it" */
+private fun playlistSummary(status: DownloadStatus.PlaylistProgress): String {
+    val got = listOfNotNull(
+        "${status.downloaded} downloaded".takeIf { status.downloaded > 0 },
+        "${status.reused} already on your phone".takeIf { status.reused > 0 },
+    ).ifEmpty { listOf("nothing downloaded") }.joinToString(", ")
+    val added = "Added ${status.added} to ${status.playlistName}" +
+        when (status.alreadyInPlaylist) {
+            0 -> ""
+            1 -> " · 1 was already in it"
+            else -> " · ${status.alreadyInPlaylist} were already in it"
+        }
+    return "Done · $got\n$added"
 }

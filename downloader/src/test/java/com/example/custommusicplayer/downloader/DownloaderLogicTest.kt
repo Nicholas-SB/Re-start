@@ -116,6 +116,30 @@ class DownloaderLogicTest {
         assertEquals(true, isWholePlaylist("https://www.youtube.com/playlist?list=PL123"))
     }
 
+    private val onPhone = listOf(
+        LibrarySong("Give Me A Reason [X5sDg177NhA].m4a", "Give Me A Reason", "SONICSIN", 109_000),
+        LibrarySong("As It Was.m4a", "As It Was", "Harry Styles", 167_000),
+        LibrarySong("BIRDS OF A FEATHER.m4a", "BIRDS OF A FEATHER", "<unknown>", 210_000),
+    )
+
+    @Test
+    fun findsSongsAlreadyOnThePhone() {
+        // By the video id in the file name, whatever the title says.
+        assertEquals("Give Me A Reason [X5sDg177NhA].m4a", findInLibrary(onPhone, PlaylistSong("X5sDg177NhA", "Something else")))
+        // Same title and artist (case and spaces don't matter).
+        assertEquals("As It Was.m4a", findInLibrary(onPhone, PlaylistSong("aaaaaaaaaaa", "as it  was", "Harry Styles", 400)))
+        // Same title and about the same length.
+        assertEquals("BIRDS OF A FEATHER.m4a", findInLibrary(onPhone, PlaylistSong("bbbbbbbbbbb", "BIRDS OF A FEATHER", "Billie Eilish", 211)))
+    }
+
+    @Test
+    fun aSameNamedSongIsNotEnough() {
+        // A cover: same title, different artist and length.
+        assertEquals(null, findInLibrary(onPhone, PlaylistSong("ccccccccccc", "As It Was", "Some Cover Band", 190)))
+        // Nothing else to compare with.
+        assertEquals(null, findInLibrary(onPhone, PlaylistSong("ddddddddddd", "As It Was")))
+    }
+
     @Test
     fun rejectsLinksWithoutAProperPlaylist() {
         listOf(
