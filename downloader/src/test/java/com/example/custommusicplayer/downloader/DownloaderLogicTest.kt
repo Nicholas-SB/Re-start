@@ -70,4 +70,33 @@ class DownloaderLogicTest {
     fun unknownDurationAcceptsAnyResult() {
         assertEquals("x", LrclibClient.pickBest(listOf(record(260.0, synced = "x")), null))
     }
+
+    @Test
+    fun acceptsRealYoutubeLinks() {
+        listOf(
+            "https://youtu.be/Kohn9PRanoY",
+            "https://www.youtube.com/watch?v=Kohn9PRanoY&list=RD123",
+            "https://music.youtube.com/watch?v=Kohn9PRanoY",
+            "https://m.youtube.com/watch?v=Kohn9PRanoY",
+            "  HTTPS://YOUTUBE.COM/watch?v=abc  ",
+        ).forEach { assertEquals(it, LinkKind.YOUTUBE, linkKind(it)) }
+    }
+
+    @Test
+    fun recognisesSpotifyLinks() {
+        assertEquals(LinkKind.SPOTIFY, linkKind("https://open.spotify.com/track/abc123"))
+    }
+
+    @Test
+    fun rejectsTextThatOnlyMentionsYoutube() {
+        listOf(
+            "--exec 'rm -rf x' https://youtube.com/watch?v=a",  // option injection attempt
+            "-o /sdcard/x https://youtu.be/a",
+            "https://evil.example/youtube.com/watch?v=a",          // YouTube only in the path
+            "https://youtube.com.evil.example/watch?v=a",          // look-alike host
+            "file:///sdcard/youtube.com/x",                         // not a web link
+            "youtube.com/watch?v=a",                                // no https://
+            "",
+        ).forEach { assertEquals(it, LinkKind.UNKNOWN, linkKind(it)) }
+    }
 }

@@ -53,6 +53,8 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
     private var nextId = 0
 
     fun download(url: String) {
+        // Double-check here too: only real YouTube links ever reach yt-dlp.
+        if (linkKind(url) != LinkKind.YOUTUBE) return
         val job = DownloadJob(id = nextId++, url = url.trim())
         _jobs.update { listOf(job) + it }  // newest first
         viewModelScope.launch {
@@ -114,11 +116,26 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
 /** What kind of link was pasted. */
 enum class LinkKind { YOUTUBE, SPOTIFY, UNKNOWN }
 
+private val youtubeHosts = setOf("youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com", "youtu.be")
+
+/**
+ * Checks the pasted text is a real web link to YouTube (or Spotify).
+ *
+ * This matters for safety: the text is handed to yt-dlp, and yt-dlp treats anything starting
+ * with "-" as an option, some of which can run commands. So we don't just look for
+ * "youtube.com" somewhere in the text; we parse it as a URL and require http(s) and an exact
+ * host. (A link that starts with "https://" can never be mistaken for an option.)
+ */
 fun linkKind(text: String): LinkKind {
-    val link = text.trim().lowercase()
-    return when {
-        listOf("youtube.com/", "youtu.be/", "music.youtube.com/").any { it in link } -> LinkKind.YOUTUBE
-        "open.spotify.com/" in link -> LinkKind.SPOTIFY
+    val uri = try {
+        java.net.URI(text.trim())  // throws on spaces and other characters links can't contain
+    } catch (e: java.net.URISyntaxException) {
+        return LinkKind.UNKNOWN
+    }
+    if (uri.scheme?.lowercase() !in setOf("http", "https")) return LinkKind.UNKNOWN
+    return when (uri.host?.lowercase()) {
+        in youtubeHosts -> LinkKind.YOUTUBE
+        "open.spotify.com" -> LinkKind.SPOTIFY
         else -> LinkKind.UNKNOWN
     }
 }
