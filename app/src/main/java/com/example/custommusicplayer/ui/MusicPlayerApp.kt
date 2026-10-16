@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -21,6 +22,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -29,6 +31,8 @@ import com.example.custommusicplayer.data.AlbumArtLoader
 import com.example.custommusicplayer.data.Song
 import com.example.custommusicplayer.downloader.DownloadScreen
 import com.example.custommusicplayer.downloader.DownloadViewModel
+import com.example.custommusicplayer.ui.theme.SurfaceLow
+import com.example.custommusicplayer.ui.theme.TextSecondary
 
 /** The tabs in the bottom navigation bar. */
 private enum class Tab { HOME, SONGS, PLAYLISTS, DOWNLOAD }
@@ -90,32 +94,45 @@ fun MusicPlayerApp(
                         MiniPlayer(
                             song = currentSong,
                             isPlaying = playerState.isPlaying,
+                            positionMs = positionMs,
                             artLoader = libraryViewModel.artLoader,
                             onClick = { showNowPlaying = true },
                             onTogglePlayPause = playerViewModel::togglePlayPause,  // a function reference
                             onSkipNext = playerViewModel::skipToNext,
                         )
                     }
-                    NavigationBar {
+                    // Black bar, white icon for the current tab, grey for the others, no highlight pill.
+                    val tabColors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = Color.White,
+                        selectedTextColor = Color.White,
+                        unselectedIconColor = TextSecondary,
+                        unselectedTextColor = TextSecondary,
+                        indicatorColor = Color.Transparent,
+                    )
+                    NavigationBar(containerColor = SurfaceLow) {
                         NavigationBarItem(
+                            colors = tabColors,
                             selected = tab == Tab.HOME,
                             onClick = { tab = Tab.HOME; openPlaylistId = null },
                             icon = { Icon(painterResource(R.drawable.ic_home), contentDescription = null) },
                             label = { Text("Home") },
                         )
                         NavigationBarItem(
+                            colors = tabColors,
                             selected = tab == Tab.SONGS,
                             onClick = { tab = Tab.SONGS; openPlaylistId = null },
                             icon = { Icon(painterResource(R.drawable.ic_library_music), contentDescription = null) },
                             label = { Text("Songs") },
                         )
                         NavigationBarItem(
+                            colors = tabColors,
                             selected = tab == Tab.PLAYLISTS,
                             onClick = { tab = Tab.PLAYLISTS; openPlaylistId = null },
                             icon = { Icon(painterResource(R.drawable.ic_playlist), contentDescription = null) },
                             label = { Text("Playlists") },
                         )
                         NavigationBarItem(
+                            colors = tabColors,
                             selected = tab == Tab.DOWNLOAD,
                             onClick = { tab = Tab.DOWNLOAD; openPlaylistId = null },
                             icon = { Icon(painterResource(R.drawable.ic_download), contentDescription = null) },

@@ -120,7 +120,7 @@ private fun MixCard(mix: Mix, songs: List<Song>, artLoader: AlbumArtLoader, onCl
     Column(modifier = Modifier.width(150.dp).clickable(onClick = onClick)) {
         val cover = songs.firstOrNull()
         if (cover != null) {
-            SongArt(cover, artLoader, Modifier.size(150.dp))
+            SongArt(cover, artLoader, Modifier.size(150.dp), cornerRadius = 8.dp)
         }
         Text(mix.title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 6.dp))
         Text(

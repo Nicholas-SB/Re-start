@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <style name="Theme.CustomMusicPlayer" parent="android:Theme.Material.Light.NoActionBar" />
+    <!-- Dark window background, so the app doesn't flash white while it starts. -->
+    <style name="Theme.CustomMusicPlayer" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#FF030303</item>
+    </style>
 </resources>

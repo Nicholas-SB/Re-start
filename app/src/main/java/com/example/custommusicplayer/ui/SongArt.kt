@@ -17,6 +17,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.example.custommusicplayer.R
 import com.example.custommusicplayer.data.AlbumArtLoader
@@ -29,6 +30,7 @@ fun SongArt(
     artLoader: AlbumArtLoader,
     modifier: Modifier = Modifier,
     sizePx: Int = AlbumArtLoader.SMALL_SIZE_PX,
+    cornerRadius: Dp = 4.dp,
 ) {
     // produceState runs the block in a coroutine and turns its result into UI state.
     // Keyed on song.id: if this slot is reused for another song, it loads again.
@@ -38,7 +40,7 @@ fun SongArt(
 
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(cornerRadius))
             .background(MaterialTheme.colorScheme.surfaceVariant),
         contentAlignment = Alignment.Center,
     ) {

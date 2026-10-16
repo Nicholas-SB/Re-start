@@ -1,34 +1,17 @@
 package com.example.custommusicplayer.ui.theme
 
 import androidx.compose.material3.Typography
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.sp
 
-// Set of Material typography styles to start with
+// Start from Material's default sizes and make headings bold, which is most of what makes
+// YouTube Music's text feel the way it does. `copy()` makes a modified copy of a style
+// (every data class gets copy(), like a builder in one call).
+private val defaults = Typography()
+
 val Typography = Typography(
-    bodyLarge = TextStyle(
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Normal,
-        fontSize = 16.sp,
-        lineHeight = 24.sp,
-        letterSpacing = 0.5.sp
-    )
-    /* Other default text styles to override
-    titleLarge = TextStyle(
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Normal,
-        fontSize = 22.sp,
-        lineHeight = 28.sp,
-        letterSpacing = 0.sp
-    ),
-    labelSmall = TextStyle(
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Medium,
-        fontSize = 11.sp,
-        lineHeight = 16.sp,
-        letterSpacing = 0.5.sp
-    )
-    */
+    headlineMedium = defaults.headlineMedium.copy(fontWeight = FontWeight.Bold),
+    headlineSmall = defaults.headlineSmall.copy(fontWeight = FontWeight.Bold),
+    titleLarge = defaults.titleLarge.copy(fontWeight = FontWeight.Bold),
+    titleMedium = defaults.titleMedium.copy(fontWeight = FontWeight.Bold),
+    titleSmall = defaults.titleSmall.copy(fontWeight = FontWeight.Bold),
 )
