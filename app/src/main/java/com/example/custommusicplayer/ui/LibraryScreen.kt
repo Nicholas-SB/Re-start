@@ -41,6 +41,7 @@ fun LibraryScreen(
     onRefresh: () -> Unit,
     onSongClick: (index: Int) -> Unit,
     onShuffleAll: () -> Unit,
+    onAddToPlaylist: (Song) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     PullToRefreshBox(
@@ -65,6 +66,7 @@ fun LibraryScreen(
                     artLoader = artLoader,
                     onClick = { onSongClick(index) },
                     isCurrent = song.id == currentSongId,
+                    menuActions = listOf(MenuAction("Add to playlist") { onAddToPlaylist(song) }),
                 )
             }
         }

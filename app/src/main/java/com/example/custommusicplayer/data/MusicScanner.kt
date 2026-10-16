@@ -95,6 +95,7 @@ class MusicScanner(private val context: Context) {
                     artist = cursor.getString(artistColumn).orIfUnknown("Unknown artist"),
                     album = cursor.getString(albumColumn).orIfUnknown("Unknown album"),
                     durationMs = cursor.getLong(durationColumn),
+                    fileName = fileName,
                 )
             }
         }

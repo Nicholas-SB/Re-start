@@ -15,4 +15,5 @@ data class Song(
     val artist: String,
     val album: String,
     val durationMs: Long,
+    val fileName: String,  // e.g. "Song I am. [Kohn9PRanoY].m4a"; stable key for playlists
 )
