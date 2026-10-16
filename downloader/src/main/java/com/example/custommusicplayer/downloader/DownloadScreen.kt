@@ -5,6 +5,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +19,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -36,8 +38,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -258,7 +262,22 @@ private fun SaveToMenu(playlists: List<PlaylistChoice>, chosen: PlaylistChoice?,
 
 @Composable
 private fun DownloadJobCard(job: DownloadJob) {
-    Card(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+    // Tapping a failed one opens it on YouTube (or in the YouTube Music app), to see what's wrong.
+    val failed = job.status is DownloadStatus.Failed
+    val uriHandler = LocalUriHandler.current
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 8.dp)
+            .clip(CardDefaults.shape)  // so the tap ripple has the card's rounded corners
+            .clickable(enabled = failed) {
+                try {
+                    uriHandler.openUri(job.url)
+                } catch (e: Exception) {
+                    // No app on the phone can open web links: nothing to do.
+                }
+            },
+    ) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(
                 text = job.title ?: job.url,
@@ -298,6 +317,9 @@ private fun DownloadJobCard(job: DownloadJob) {
                     style = MaterialTheme.typography.bodyMedium,
                     color = if (status is DownloadStatus.Failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+            if (failed) {
+                Text("Tap to open on YouTube", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             when (status) {
                 is DownloadStatus.Downloading ->
