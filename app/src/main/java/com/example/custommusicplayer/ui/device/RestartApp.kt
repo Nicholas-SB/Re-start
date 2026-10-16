@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -296,7 +295,7 @@ fun RestartApp(
                             LaunchedEffect(Unit) { libraryViewModel.loadSongsOnce() }
 
                             // The list shown by menu pages. A composable lambda: a piece of UI kept in
-                            // a variable, so the main menu (list + fox) and other pages can share it.
+                            // a variable, so it can be placed wherever a page needs it.
                             val menuList: @Composable () -> Unit = {
                                 MenuPage(
                                     entries = entries,
@@ -335,14 +334,6 @@ fun RestartApp(
                                     onSave = { saveName(page) },
                                     onCancel = { navigation.back() },
                                 )
-                                Page.MainMenu -> Box(modifier = Modifier.fillMaxSize()) {
-                                    menuList()
-                                    // The fox naps in the corner; it wakes up while music plays.
-                                    FoxMascot(
-                                        awake = playerState.isPlaying,
-                                        modifier = Modifier.align(Alignment.BottomEnd).padding(10.dp).size(96.dp),
-                                    )
-                                }
                                 else -> menuList()
                             }
                         }

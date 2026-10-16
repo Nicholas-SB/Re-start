@@ -1,7 +1,10 @@
 package com.example.custommusicplayer.ui.device
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.media.AudioManager
+import android.os.Build
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -24,7 +27,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -45,8 +53,9 @@ import com.example.custommusicplayer.ui.formatDuration
 import kotlin.math.abs
 
 /**
- * The Now Playing page inside the player's screen: "2 of 10", cover and song info (or the
- * lyrics), and a progress bar that turns into a volume bar while you turn the wheel.
+ * The Now Playing page inside the player's screen: "2 of 10", a big cover with the song
+ * below it (or the lyrics), and a progress bar that turns into a volume bar while you turn
+ * the wheel.
  */
 @Composable
 fun DeviceNowPlaying(
@@ -73,75 +82,115 @@ fun DeviceNowPlaying(
         value = lyricsLoader.load(song)?.let { LyricsState.Found(it) } ?: LyricsState.NotFound
     }
 
-    Column(modifier = modifier.fillMaxSize().padding(12.dp)) {
-        Text(
-            "${state.queuePosition} of ${state.queueSize}",
-            color = DeviceColors.TextSoft,
-            fontSize = 13.sp,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth(),
-        )
+    // A soft wash of the cover's colors behind everything (blurred and faded).
+    val backdrop by produceState<Bitmap?>(initialValue = null, song.id) {
+        value = artLoader.load(song)
+    }
+    val lyricsFound = showLyrics && lyricsState is LyricsState.Found
 
-        val lyricsFound = showLyrics && lyricsState is LyricsState.Found
-        if (lyricsFound) {
-            // Small title line above the lyrics, so you still know what's playing.
-            Text(
-                "${song.title} · ${song.artist}",
-                color = DeviceColors.Text,
-                fontWeight = FontWeight.Bold,
-                fontSize = 14.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 4.dp),
-            )
-            LyricsPanel(
-                state = lyricsState,
-                positionMs = positionMs,
-                onSeek = onSeek,
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-            )
-        } else {
-            SongInfo(
-                song = song,
-                artLoader = artLoader,
-                note = if (showLyrics && lyricsState == LyricsState.NotFound) "No lyrics for this song" else null,
-                modifier = Modifier.weight(1f),
+    Box(modifier = modifier.fillMaxSize()) {
+        // Modifier.blur only works on Android 12+; without it the picture would be sharp
+        // and distracting, so older phones simply keep the plain cream screen.
+        val art = backdrop
+        if (art != null && !lyricsFound && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            Image(
+                bitmap = art.asImageBitmap(),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.matchParentSize().blur(40.dp).alpha(0.35f),
             )
         }
 
-        Spacer(Modifier.height(8.dp))
-        if (volumeFraction != null) {
-            VolumeBar(volumeFraction)
-        } else {
-            SongProgress(positionMs = positionMs, durationMs = song.durationMs)
+        Column(modifier = Modifier.fillMaxSize().padding(12.dp)) {
+            Text(
+                "${state.queuePosition} of ${state.queueSize}",
+                color = DeviceColors.TextSoft,
+                fontSize = 13.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            if (lyricsFound) {
+                // Small title line above the lyrics, so you still know what's playing.
+                Text(
+                    "${song.title} · ${song.artist}",
+                    color = DeviceColors.Text,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+                LyricsPanel(
+                    state = lyricsState,
+                    positionMs = positionMs,
+                    onSeek = onSeek,
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                )
+            } else {
+                SongInfo(
+                    song = song,
+                    artLoader = artLoader,
+                    note = if (showLyrics && lyricsState == LyricsState.NotFound) "No lyrics for this song" else null,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+
+            Spacer(Modifier.height(8.dp))
+            if (volumeFraction != null) {
+                VolumeBar(volumeFraction)
+            } else {
+                SongProgress(positionMs = positionMs, durationMs = song.durationMs)
+            }
         }
     }
 }
 
-/** Cover on the left, title / artist / album on the right, like the iPod's Now Playing. */
+/**
+ * The cover as the star of the page: the biggest square that fits, with a soft shadow,
+ * and the song centered underneath.
+ */
 @Composable
 private fun SongInfo(song: Song, artLoader: AlbumArtLoader, note: String?, modifier: Modifier = Modifier) {
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        SongArt(
-            song = song,
-            artLoader = artLoader,
-            sizePx = AlbumArtLoader.LARGE_SIZE_PX,
-            cornerRadius = 6.dp,
-            modifier = Modifier.weight(1f).aspectRatio(1f),  // square
+    Column(modifier = modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(
+            modifier = Modifier.weight(1f).fillMaxWidth().padding(vertical = 10.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            val shape = RoundedCornerShape(10.dp)
+            SongArt(
+                song = song,
+                artLoader = artLoader,
+                sizePx = AlbumArtLoader.LARGE_SIZE_PX,
+                cornerRadius = 10.dp,
+                // matchHeightConstraintsFirst: try "as tall as the space allows" first, so the
+                // square never overflows; if that's too wide, it uses the width instead.
+                modifier = Modifier
+                    .aspectRatio(1f, matchHeightConstraintsFirst = true)
+                    .shadow(elevation = 10.dp, shape = shape),
+            )
+        }
+        Text(
+            song.title,
+            color = DeviceColors.Text,
+            fontWeight = FontWeight.Bold,
+            fontSize = 19.sp,
+            textAlign = TextAlign.Center,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
         )
-        Column(modifier = Modifier.weight(1f)) {
-            Text(song.title, color = DeviceColors.Text, fontWeight = FontWeight.Bold, fontSize = 18.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
-            Text(song.artist, color = DeviceColors.Text, fontSize = 15.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            if (song.album != MusicScanner.UNKNOWN_ALBUM) {
-                Text(song.album, color = DeviceColors.TextSoft, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            }
-            if (note != null) {
-                Text(note, color = DeviceColors.TextSoft, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
-            }
+        // "Artist · Album", leaving out the album when there isn't one.
+        val details = listOfNotNull(song.artist, song.album.takeIf { it != MusicScanner.UNKNOWN_ALBUM })
+        Text(
+            details.joinToString(" · "),
+            color = DeviceColors.TextSoft,
+            fontSize = 14.sp,
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (note != null) {
+            Text(note, color = DeviceColors.TextSoft, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
         }
     }
 }
