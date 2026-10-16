@@ -1,0 +1,26 @@
+*.iml
+.gradle
+/local.properties
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+
+# Never commit music, lyrics or other media files
+*.m4a
+*.mp3
+*.flac
+*.wav
+*.ogg
+*.opus
+*.aac
+*.webm
+*.lrc
