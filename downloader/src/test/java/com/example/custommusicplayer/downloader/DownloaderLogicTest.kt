@@ -99,4 +99,30 @@ class DownloaderLogicTest {
             "",
         ).forEach { assertEquals(it, LinkKind.UNKNOWN, linkKind(it)) }
     }
+
+    @Test
+    fun readsPlaylistLinks() {
+        val music = playlistLink("https://music.youtube.com/playlist?list=PLx0sYbCqOb8TBPRdmBHs5Iftvv9TPboYG&si=AbC")
+        assertEquals("https://music.youtube.com/playlist?list=PLx0sYbCqOb8TBPRdmBHs5Iftvv9TPboYG", music?.url)
+        assertEquals("https://music.youtube.com/watch?v=Kohn9PRanoY", music?.songUrl("Kohn9PRanoY"))
+
+        val youtube = playlistLink("https://www.youtube.com/playlist?list=OLAK5uy_abc-123")
+        assertEquals("https://www.youtube.com/playlist?list=OLAK5uy_abc-123", youtube?.url)
+
+        // A song played from a mix: keep both ids, the mix only works that way.
+        val mix = playlistLink("https://www.youtube.com/watch?v=Kohn9PRanoY&list=RDKohn9PRanoY")
+        assertEquals("https://www.youtube.com/watch?v=Kohn9PRanoY&list=RDKohn9PRanoY", mix?.url)
+        assertEquals(false, isWholePlaylist("https://www.youtube.com/watch?v=Kohn9PRanoY&list=RDKohn9PRanoY"))
+        assertEquals(true, isWholePlaylist("https://www.youtube.com/playlist?list=PL123"))
+    }
+
+    @Test
+    fun rejectsLinksWithoutAProperPlaylist() {
+        listOf(
+            "https://youtu.be/Kohn9PRanoY",                              // just a song
+            "https://www.youtube.com/playlist?list=",                    // empty id
+            "https://www.youtube.com/playlist?list=PL1%20--exec%20x",    // odd characters
+            "https://evil.example/playlist?list=PL123",                  // not YouTube
+        ).forEach { assertEquals(it, null, playlistLink(it)) }
+    }
 }

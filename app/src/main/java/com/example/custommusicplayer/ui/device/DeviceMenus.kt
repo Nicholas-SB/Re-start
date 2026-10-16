@@ -51,6 +51,7 @@ class DeviceMenus(
         is Page.Mix -> mixes.firstOrNull { it.id == page.mixId }?.title ?: "Mix"
         Page.Stats -> "Stats"
         Page.Download -> "Download"
+        Page.PlaylistImport -> "Import Playlist"
         Page.Settings -> "Settings"
         Page.MusicFolder -> "Music Folder"
         Page.NowPlaying -> "Now Playing"
@@ -87,7 +88,7 @@ class DeviceMenus(
         is Page.AddToPlaylist -> addToPlaylistMenu(page.songId)
         is Page.ConfirmDelete -> confirmDeleteMenu(page.playlistId)
         // These draw their own content instead of a list.
-        Page.NowPlaying, Page.Download, is Page.NameEntry -> emptyList()
+        Page.NowPlaying, Page.Download, Page.PlaylistImport, is Page.NameEntry -> emptyList()
     }
 
     // --- Top level ---
@@ -227,9 +228,6 @@ class DeviceMenus(
         MenuEntry("Wheel vibration", detail = settings.vibration.label) { settings.cycleVibration() },
         MenuEntry("Pause for calls", detail = if (settings.pauseForCalls) "On · even when the ringer is silent" else "Off") {
             togglePauseForCalls()
-        },
-        MenuEntry("Scratch sound", detail = if (settings.scratchSound) "On · when holding ⏮ / ⏭" else "Off") {
-            settings.toggleScratchSound()
         },
         MenuEntry("About", detail = "Re-start · your music, your player") {},
     )

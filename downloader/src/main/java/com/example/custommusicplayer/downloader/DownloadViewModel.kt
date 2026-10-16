@@ -16,12 +16,13 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.File
 
-/** One pasted link and how far along it is. */
+/** One pasted link (or one song of an imported playlist) and how far along it is. */
 data class DownloadJob(
     val id: Int,
     val url: String,
-    val title: String? = null,  // known once the download finishes
+    val title: String? = null,  // known once the download finishes (or from the playlist)
     val status: DownloadStatus = DownloadStatus.Waiting,
+    val playlistName: String? = null,  // for playlist imports: the playlist it goes into
 )
 
 sealed interface DownloadStatus {
@@ -31,9 +32,12 @@ sealed interface DownloadStatus {
     data object FindingLyrics : DownloadStatus
     data class Done(val alreadyInLibrary: Boolean, val lyrics: LyricsOutcome) : DownloadStatus
     data class Failed(val message: String) : DownloadStatus
+
+    /** A playlist import's own card: [finished] of [total] songs are through, [added] made it in. */
+    data class PlaylistProgress(val playlistName: String, val finished: Int, val added: Int, val total: Int) : DownloadStatus
 }
 
-enum class LyricsOutcome { SAVED, ALREADY_THERE, NOT_FOUND }
+enum class LyricsOutcome { SAVED, ALREADY_THERE, NOT_FOUND, NOT_CHECKED }
 
 /** Runs downloads one at a time and reports their progress. */
 class DownloadViewModel(application: Application) : AndroidViewModel(application) {
@@ -53,9 +57,12 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
     private val oneAtATime = Mutex()
     private var nextId = 0
 
+    /** Saves imported playlists. The app sets this; the downloader can't see the database. */
+    var playlistWriter: PlaylistWriter? = null
+
     fun download(url: String) {
         // Double-check here too: only real YouTube links ever reach yt-dlp.
-        if (linkKind(url) != LinkKind.YOUTUBE) return
+        if (linkKind(url) != LinkKind.YOUTUBE || isWholePlaylist(url)) return
         val job = DownloadJob(id = nextId++, url = url.trim())
         _jobs.update { listOf(job) + it }  // newest first
         viewModelScope.launch {
@@ -63,8 +70,73 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    private suspend fun run(job: DownloadJob) {
+    /**
+     * Imports a YouTube / YouTube Music playlist: lists its songs, then downloads them one by one
+     * (songs already on the phone are reused) and adds each to [target] as soon as it's ready,
+     * so the playlist keeps YouTube's order.
+     */
+    fun importPlaylist(text: String, target: ImportTarget) {
+        val link = playlistLink(text) ?: return
+        val importJob = DownloadJob(id = nextId++, url = link.url, title = "Playlist")
+        _jobs.update { listOf(importJob) + it }
+        viewModelScope.launch {
+            try {
+                val writer = playlistWriter ?: error("Playlists aren't available")
+                val playlist = oneAtATime.withLock {
+                    downloader.prepare { message -> setStatus(importJob.id, DownloadStatus.Preparing(message)) }
+                    setStatus(importJob.id, DownloadStatus.Preparing("Reading playlist…"))
+                    downloader.readPlaylist(link)
+                }
+                if (playlist.songs.isEmpty()) error("No songs found in that playlist")
+
+                // Kotlin can return two values as a Pair and unpack them: val (a, b) = ...
+                val (playlistId, playlistName) = when (target) {
+                    is ImportTarget.ExistingPlaylist -> target.playlistId to target.name
+                    is ImportTarget.NewPlaylist -> {
+                        val name = target.name.trim().ifBlank { playlist.title }
+                        writer.createPlaylist(name) to name
+                    }
+                }
+
+                // One card per song, listed right under the playlist's card, in order.
+                val songJobs = playlist.songs.map { song ->
+                    DownloadJob(id = nextId++, url = link.songUrl(song.videoId), title = song.title, playlistName = playlistName)
+                }
+                _jobs.update { jobs ->
+                    val at = jobs.indexOfFirst { it.id == importJob.id } + 1
+                    jobs.take(at) + songJobs + jobs.drop(at)
+                }
+                updateJob(importJob.id) { it.copy(title = "Playlist: ${playlist.title}") }
+
+                var added = 0
+                // zip pairs each song with its card: [(song1, job1), (song2, job2), ...]
+                playlist.songs.zip(songJobs).forEachIndexed { index, (song, job) ->
+                    setStatus(importJob.id, DownloadStatus.PlaylistProgress(playlistName, index, added, songJobs.size))
+                    val fileName = oneAtATime.withLock { run(job, videoId = song.videoId) }
+                    if (fileName != null) {
+                        writer.addSong(playlistId, fileName)
+                        added++
+                    }
+                }
+                setStatus(importJob.id, DownloadStatus.PlaylistProgress(playlistName, songJobs.size, added, songJobs.size))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                setStatus(importJob.id, DownloadStatus.Failed(friendlyMessage(e)))
+            }
+        }
+    }
+
+    /**
+     * Downloads one song (or, if [videoId] is given and that song is already on the phone,
+     * reuses it). Returns the song's file name, or null if it failed.
+     */
+    private suspend fun run(job: DownloadJob, videoId: String? = null): String? {
         try {
+            videoId?.let { downloader.findInLibrary(it) }?.let { existing ->
+                setStatus(job.id, DownloadStatus.Done(alreadyInLibrary = true, lyrics = LyricsOutcome.NOT_CHECKED))
+                return existing
+            }
             downloader.prepare { message -> setStatus(job.id, DownloadStatus.Preparing(message)) }
             setStatus(job.id, DownloadStatus.Downloading(0f))
             val song = downloader.download(job.url) { percent -> setStatus(job.id, DownloadStatus.Downloading(percent)) }
@@ -89,10 +161,12 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
 
             setStatus(job.id, DownloadStatus.Done(song.wasAlreadyInLibrary, lyricsOutcome))
             _songDownloaded.tryEmit(Unit)
+            return song.file.name
         } catch (e: CancellationException) {
             throw e  // the ViewModel is going away; let the coroutine stop
         } catch (e: Exception) {
             setStatus(job.id, DownloadStatus.Failed(friendlyMessage(e)))
+            return null
         }
     }
 

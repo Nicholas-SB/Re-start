@@ -3,6 +3,7 @@ package com.example.custommusicplayer.downloader
 import android.content.Context
 import android.media.MediaScannerConnection
 import android.os.Environment
+import android.provider.MediaStore
 import com.yausername.ffmpeg.FFmpeg
 import com.yausername.youtubedl_android.YoutubeDL
 import com.yausername.youtubedl_android.YoutubeDLRequest
@@ -105,6 +106,49 @@ class SongDownloader(private val context: Context) {
         )
     }
 
+    /**
+     * Lists a playlist's songs without downloading anything (--flat-playlist only reads the
+     * playlist page, not each video). Skips videos that are private or deleted.
+     */
+    suspend fun readPlaylist(link: PlaylistLink): YoutubePlaylist = withContext(Dispatchers.IO) {
+        val request = YoutubeDLRequest(link.url).apply {
+            addOption("--flat-playlist")
+            addOption("--yes-playlist")
+            addOption("-J")  // print the whole playlist as one JSON object
+        }
+        val response = YoutubeDL.getInstance().execute(request, PROCESS_ID)
+        val info = JSONObject(response.out.lines().last { it.trim().startsWith("{") })
+        val entries = info.optJSONArray("entries")
+        val songs = (0 until (entries?.length() ?: 0)).mapNotNull { index ->
+            val entry = entries!!.getJSONObject(index)
+            val videoId = entry.optString("id")
+            val title = entry.stringOrNull("title") ?: videoId
+            PlaylistSong(videoId, title).takeIf { isVideoId(videoId) && title !in unavailableTitles }
+        }
+        // YouTube Music albums are called "Album - <name>" on YouTube; just "<name>" reads better.
+        val title = info.stringOrNull("title")?.removePrefix("Album - ") ?: "YouTube playlist"
+        YoutubePlaylist(title, songs)
+    }
+
+    /**
+     * Finds a song that's already on the phone by its YouTube id, which yt-dlp puts in the
+     * file name ("Title [id].m4a"). Returns its file name, or null.
+     */
+    fun findInLibrary(videoId: String): String? {
+        val nameColumn = MediaStore.Audio.Media.DISPLAY_NAME
+        // In LIKE, "_" means "any one character", so this can match a bit too much; the exact
+        // check on each result below sorts that out.
+        context.contentResolver.query(
+            MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, arrayOf(nameColumn), "$nameColumn LIKE ?", arrayOf("%[$videoId].%"), null,
+        )?.use { cursor ->
+            while (cursor.moveToNext()) {
+                val name = cursor.getString(0) ?: continue
+                if (name.contains("[$videoId].")) return name
+            }
+        }
+        return null
+    }
+
     /** "<song name>.lrc" next to the song, where the player looks for lyrics. */
     fun lyricsFileFor(song: File): File = File(song.parentFile, "${song.nameWithoutExtension}.lrc")
 
@@ -134,5 +178,8 @@ class SongDownloader(private val context: Context) {
         private const val PROCESS_ID = "song-download"
         private const val KEY_LAST_UPDATE = "ytdlp_last_update"
         private const val UPDATE_INTERVAL_MS = 24 * 60 * 60 * 1000L
+
+        /** What YouTube shows instead of a title for videos you can't play. */
+        private val unavailableTitles = setOf("[Private video]", "[Deleted video]")
     }
 }

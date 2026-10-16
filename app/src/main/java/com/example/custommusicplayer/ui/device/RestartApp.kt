@@ -30,7 +30,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -50,8 +49,11 @@ import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.custommusicplayer.data.mixes.MixGenerator
+import com.example.custommusicplayer.data.db.DatabasePlaylistWriter
 import com.example.custommusicplayer.downloader.DownloadScreen
 import com.example.custommusicplayer.downloader.DownloadViewModel
+import com.example.custommusicplayer.downloader.PlaylistChoice
+import com.example.custommusicplayer.downloader.PlaylistImportScreen
 import com.example.custommusicplayer.ui.AudioPermissionGate
 import com.example.custommusicplayer.ui.LibraryViewModel
 import com.example.custommusicplayer.ui.PlayerViewModel
@@ -59,7 +61,6 @@ import com.example.custommusicplayer.ui.PlaylistViewModel
 import com.example.custommusicplayer.ui.StatsViewModel
 import java.time.LocalDate
 import kotlin.random.Random
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.flowOf
@@ -185,36 +186,20 @@ fun RestartApp(
         }
     }
 
-    // Scanning (holding ⏭/⏮): the music drops to a whisper under a DJ-scratch sound, then
-    // fades back in from the new spot when you let go.
-    val scope = rememberCoroutineScope()
-    var fadeIn by remember { mutableStateOf<Job?>(null) }
+    // Scanning (holding ⏭/⏮).
     fun onScan(forward: Boolean, heldMs: Long) {
-        if (heldMs < 50) {  // the first tick of a new scan
-            fadeIn?.cancel()
-            if (settings.scratchSound) {
-                feedback.startScratch(forward)
-                playerViewModel.setVolume(0.12f)
-            }
-        }
         // Each tick (6-7 per second) jumps 2 s; after holding 2 s, 6 s per tick.
         val step = if (heldMs < 2_000) 2_000L else 6_000L
         playerViewModel.seekBy(if (forward) step else -step)
-    }
-    fun onScanEnd() {
-        feedback.stopScratch()
-        fadeIn = scope.launch {
-            // From 12% back to full volume in 10 small steps (about 0.8 s).
-            for (i in 1..10) {
-                playerViewModel.setVolume(0.12f + 0.88f * i / 10)
-                delay(80)
-            }
-        }
     }
 
     // When the downloader saves a new song, rescan so it shows up right away.
     LaunchedEffect(Unit) {
         downloadViewModel.songDownloaded.collect { libraryViewModel.rescan() }
+    }
+    // Let playlist imports write into our database.
+    LaunchedEffect(downloadViewModel) {
+        downloadViewModel.playlistWriter = DatabasePlaylistWriter(context.applicationContext)
     }
 
     // --- What each page shows ---
@@ -280,7 +265,7 @@ fun RestartApp(
                 volumeFraction = volume.fraction
                 lastVolumeChange = SystemClock.uptimeMillis()
             }
-            is Page.NameEntry, Page.Download -> {}  // nothing to scroll
+            is Page.NameEntry, Page.Download, Page.PlaylistImport -> {}  // nothing to scroll
             else -> {
                 val moved = acceleration.apply(steps, SystemClock.uptimeMillis())
                 navigation.moveSelection(current, moved, currentEntries.size)
@@ -292,7 +277,7 @@ fun RestartApp(
         when (val current = navigation.currentPage) {
             Page.NowPlaying -> showLyrics = !showLyrics
             is Page.NameEntry -> saveName(current)
-            Page.Download -> {}  // the download page is used by touch
+            Page.Download, Page.PlaylistImport -> {}  // the download pages are used by touch
             else -> currentEntries.getOrNull(navigation.selectedIndex(current))?.onSelect?.invoke()
         }
     }
@@ -301,7 +286,7 @@ fun RestartApp(
     fun onCenterHold() {
         when (val current = navigation.currentPage) {
             Page.NowPlaying -> if (latestSong != null) navigation.open(Page.NowPlayingOptions)
-            is Page.NameEntry, Page.Download -> {}
+            is Page.NameEntry, Page.Download, Page.PlaylistImport -> {}
             else -> currentEntries.getOrNull(navigation.selectedIndex(current))?.onLongPress?.invoke()
         }
     }
@@ -393,7 +378,15 @@ fun RestartApp(
                                     volumeFraction = volumeFraction,
                                     onSeek = playerViewModel::seekTo,
                                 )
-                                Page.Download -> DownloadScreen(viewModel = downloadViewModel, showTitle = false)
+                                Page.Download -> DownloadScreen(
+                                    viewModel = downloadViewModel,
+                                    showTitle = false,
+                                    onOpenPlaylistImport = { navigation.open(Page.PlaylistImport) },
+                                )
+                                Page.PlaylistImport -> PlaylistImportScreen(
+                                    viewModel = downloadViewModel,
+                                    playlists = playlists.map { PlaylistChoice(it.id, it.name) },
+                                )
                                 is Page.NameEntry -> NameEntryPage(
                                     name = nameDraft,
                                     onNameChange = { nameDraft = it },
@@ -418,7 +411,6 @@ fun RestartApp(
                         onNext = playerViewModel::skipToNext,
                         onPlayPause = playerViewModel::togglePlayPause,
                         onScan = ::onScan,
-                        onScanEnd = ::onScanEnd,
                         feedback = feedback,
                         modifier = Modifier.fillMaxWidth(0.8f),
                     )

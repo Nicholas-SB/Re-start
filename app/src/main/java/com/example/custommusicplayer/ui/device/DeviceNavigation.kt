@@ -21,6 +21,9 @@ sealed interface Page {
     data class Mix(val mixId: String) : Page
     data object Stats : Page
     data object Download : Page
+
+    /** Download a whole YouTube playlist into one of yours. */
+    data object PlaylistImport : Page
     data object Settings : Page
     data object MusicFolder : Page
     data object NowPlaying : Page

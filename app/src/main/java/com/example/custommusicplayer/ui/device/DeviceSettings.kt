@@ -44,8 +44,6 @@ class DeviceSettings(context: Context) {
         private set
     var vibration by mutableStateOf(loadVibration())
         private set
-    var scratchSound by mutableStateOf(prefs.getBoolean(KEY_SCRATCH_SOUND, true))
-        private set
     var pauseForCalls by mutableStateOf(prefs.getBoolean(KEY_PAUSE_FOR_CALLS, false))
         private set
     var songSort by mutableStateOf(
@@ -61,11 +59,6 @@ class DeviceSettings(context: Context) {
     fun cycleVibration() {
         vibration = vibration.next()
         prefs.edit().putString(KEY_VIBRATION_LEVEL, vibration.name).apply()
-    }
-
-    fun toggleScratchSound() {
-        scratchSound = !scratchSound
-        prefs.edit().putBoolean(KEY_SCRATCH_SOUND, scratchSound).apply()
     }
 
     fun changePauseForCalls(on: Boolean) {
@@ -90,7 +83,6 @@ class DeviceSettings(context: Context) {
         const val KEY_CLICK_SOUND = "click_sound"
         const val KEY_OLD_VIBRATION = "vibration"
         const val KEY_VIBRATION_LEVEL = "vibration_level"
-        const val KEY_SCRATCH_SOUND = "scratch_sound"
         const val KEY_SONG_SORT = "song_sort"
         const val KEY_PAUSE_FOR_CALLS = "pause_for_calls"
     }
@@ -98,7 +90,7 @@ class DeviceSettings(context: Context) {
 
 /**
  * What you feel and hear when using the wheel: a vibration tick and/or a soft click,
- * depending on the settings, and the DJ-scratch sound while scanning through a song.
+ * depending on the settings.
  *
  * SoundPool is Android's player for short sound effects: it loads them into memory once,
  * so playing one is instant (unlike ExoPlayer, which is built for long tracks).
@@ -119,8 +111,6 @@ class WheelFeedback(context: Context, private val settings: DeviceSettings) {
         .build()
     private val tickSound = soundPool.load(context, R.raw.wheel_tick, 1)
     private val pressSound = soundPool.load(context, R.raw.button_press, 1)
-    private val scratchSound = soundPool.load(context, R.raw.scratch_loop, 1)
-    private var scratchStream = 0  // the playing scratch loop, 0 = none
 
     private val vibrator: Vibrator? = context.getSystemService(Vibrator::class.java)
 
@@ -138,18 +128,6 @@ class WheelFeedback(context: Context, private val settings: DeviceSettings) {
 
     /** Holding a button long enough to do its "hold" action. */
     fun hold(view: View) = vibrate(view, HapticFeedbackConstants.LONG_PRESS, lightMs = 18)
-
-    /** Starts the looping scratch sound (a bit higher when going forward, lower going back). */
-    fun startScratch(forward: Boolean) {
-        if (!settings.scratchSound || scratchStream != 0) return
-        // play(sound, leftVolume, rightVolume, priority, loop = -1 forever, playback rate)
-        scratchStream = soundPool.play(scratchSound, 0.8f, 0.8f, 2, -1, if (forward) 1.15f else 0.85f)
-    }
-
-    fun stopScratch() {
-        if (scratchStream != 0) soundPool.stop(scratchStream)
-        scratchStream = 0
-    }
 
     /**
      * NORMAL uses Android's standard effect for this kind of touch. LIGHT uses a softer pulse
