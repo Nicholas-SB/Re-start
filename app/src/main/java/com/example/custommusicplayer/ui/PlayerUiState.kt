@@ -12,7 +12,11 @@ data class PlayerUiState(
     val shuffleEnabled: Boolean = false,
     val repeatMode: RepeatMode = RepeatMode.OFF,
     val upNext: List<QueueEntry> = emptyList(),  // songs after the current one, in play order
-)
+    val queueSize: Int = 0,
+) {
+    /** Where the current song is in the play order, counting from 1 (for "2 of 10"). */
+    val queuePosition: Int get() = queueSize - upNext.size
+}
 
 /** One song in the queue. [queueIndex] is its position in the player's list, used to jump to it. */
 data class QueueEntry(val queueIndex: Int, val songId: Long)

@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <!-- Dark window background, so the app doesn't flash white while it starts. -->
-    <style name="Theme.CustomMusicPlayer" parent="android:Theme.Material.NoActionBar">
-        <item name="android:windowBackground">#FF030303</item>
+    <!-- The player body's silver, so the app doesn't flash another color while it starts. -->
+    <style name="Theme.CustomMusicPlayer" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">#FFEFECE6</item>
     </style>
 </resources>

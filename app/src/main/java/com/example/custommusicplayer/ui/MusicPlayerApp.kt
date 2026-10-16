@@ -77,11 +77,6 @@ fun MusicPlayerApp(
     var songToAdd by remember { mutableStateOf<Song?>(null) }
     var showNewPlaylistDialog by remember { mutableStateOf(false) }
 
-    // When the downloader saves a new song, rescan so it shows up in the library right away.
-    LaunchedEffect(Unit) {
-        downloadViewModel.songDownloaded.collect { libraryViewModel.rescan() }
-    }
-
     // Back closes an open playlist instead of leaving the app.
     BackHandler(enabled = openPlaylistId != null) { openPlaylistId = null }
 

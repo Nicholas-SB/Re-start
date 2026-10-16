@@ -90,16 +90,20 @@ class MusicScanner(private val context: Context) {
             while (cursor.moveToNext()) {
                 val id = cursor.getLong(idColumn)
                 val fileName = cursor.getString(fileNameColumn) ?: "Unknown"
+                val filePath: String? = cursor.getString(pathColumn)
+                // Without an album tag, Android uses the folder name (e.g. "Download") as the album.
+                val folderName = filePath?.substringBeforeLast('/')?.substringAfterLast('/')
+                val album = cursor.getString(albumColumn)?.takeIf { it != folderName }
 
                 songs += Song(
                     id = id,
                     uri = ContentUris.withAppendedId(collection, id),
                     title = cursor.getString(titleColumn).orIfUnknown(fileName.substringBeforeLast('.')),
                     artist = cursor.getString(artistColumn).orIfUnknown("Unknown artist"),
-                    album = cursor.getString(albumColumn).orIfUnknown("Unknown album"),
+                    album = album.orIfUnknown(UNKNOWN_ALBUM),
                     durationMs = cursor.getLong(durationColumn),
                     fileName = fileName,
-                    filePath = cursor.getString(pathColumn),
+                    filePath = filePath,
                 )
             }
         }
@@ -115,6 +119,8 @@ class MusicScanner(private val context: Context) {
         if (isNullOrBlank() || this == MediaStore.UNKNOWN_STRING) fallback else this
 
     companion object {
+        const val UNKNOWN_ALBUM = "Unknown album"
+
         /** Folders (and their subfolders) to index. Add more if your music lives elsewhere. */
         private val FOLDERS_TO_SCAN = listOf(Environment.DIRECTORY_MUSIC, Environment.DIRECTORY_DOWNLOADS)
         private const val SCAN_TIMEOUT_MS = 30_000L

@@ -96,6 +96,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 else -> RepeatMode.OFF
             },
             upNext = buildUpNext(player),
+            queueSize = player.mediaItemCount,
         )
         _positionMs.value = player.currentPosition
     }
