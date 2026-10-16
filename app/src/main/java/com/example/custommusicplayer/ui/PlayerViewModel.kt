@@ -128,6 +128,13 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         player.play()
     }
 
+    /** Turns shuffle off and plays [songs] in this order (a song mix is already in its order). */
+    fun playInOrder(songs: List<Song>) {
+        if (songs.isEmpty()) return
+        controller?.shuffleModeEnabled = false
+        playQueue(songs, 0)
+    }
+
     /** Turns shuffle on and plays [songs] starting from a random one. */
     fun shuffleAll(songs: List<Song>) {
         if (songs.isEmpty()) return

@@ -14,14 +14,18 @@ interface StatsDao {
     @Query("SELECT * FROM song_stats")
     fun observeAllStats(): Flow<List<SongStatsEntity>>
 
+    /**
+     * Songs played within [windowMs] of any play of [songFileName], listed once per such play.
+     * A "self join": the table is read twice, as `seed` and `other`, and the rows are paired up.
+     */
     @Query(
         """
-        SELECT songFileName, COUNT(*) AS plays FROM play_events
-        WHERE playedAt >= :since
-        GROUP BY songFileName
+        SELECT other.songFileName FROM play_events seed
+        JOIN play_events other ON other.playedAt BETWEEN seed.playedAt - :windowMs AND seed.playedAt + :windowMs
+        WHERE seed.songFileName = :songFileName AND other.songFileName != :songFileName
         """
     )
-    fun observePlayCountsSince(since: Long): Flow<List<RecentPlayCount>>
+    suspend fun songsPlayedAround(songFileName: String, windowMs: Long): List<String>
 
     // IGNORE: if the song already has a row, keep it (we only want to make sure one exists).
     @Insert(onConflict = OnConflictStrategy.IGNORE)

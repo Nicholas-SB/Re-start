@@ -49,8 +49,9 @@ import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.custommusicplayer.data.mixes.MixGenerator
+import com.example.custommusicplayer.data.mixes.SongMixMaker
 import com.example.custommusicplayer.data.AppMusicLibrary
+import com.example.custommusicplayer.data.Song
 import com.example.custommusicplayer.downloader.DownloadScreen
 import com.example.custommusicplayer.downloader.DownloadViewModel
 import com.example.custommusicplayer.downloader.PlaylistChoice
@@ -60,8 +61,6 @@ import com.example.custommusicplayer.ui.LibraryViewModel
 import com.example.custommusicplayer.ui.PlayerViewModel
 import com.example.custommusicplayer.ui.PlaylistViewModel
 import com.example.custommusicplayer.ui.StatsViewModel
-import java.time.LocalDate
-import kotlin.random.Random
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.flowOf
@@ -90,24 +89,10 @@ fun RestartApp(
     val positionMs by playerViewModel.positionMs.collectAsStateWithLifecycle()
     val playlists by playlistViewModel.playlists.collectAsStateWithLifecycle()
     val stats by statsViewModel.stats.collectAsStateWithLifecycle()
-    val playsLast30Days by statsViewModel.playsLast30Days.collectAsStateWithLifecycle()
 
     val songsById = remember(songs) { songs.associateBy { it.id } }
     val songsByFileName = remember(songs) { songs.associateBy { it.fileName } }
     val currentSong = playerState.currentSongId?.let { songsById[it] }
-
-    // Mixes, rebuilt when the library or stats change. Seeded by today's date, so the random
-    // ones stay the same all day and change tomorrow.
-    val today = LocalDate.now().toEpochDay()
-    val mixes = remember(songsByFileName, stats, playsLast30Days, today) {
-        MixGenerator.generate(
-            songFileNames = songsByFileName.keys.toList(),
-            stats = stats,
-            playsLast30Days = playsLast30Days,
-            now = System.currentTimeMillis(),
-            random = Random(today),
-        )
-    }
 
     val page = navigation.currentPage
 
@@ -217,6 +202,16 @@ fun RestartApp(
         }
     }
 
+    // "Start Mix" on a song: songs that go with it, from your library, played in that order.
+    val mixMaker = remember { SongMixMaker(context.applicationContext) }
+    fun startMix(song: Song) {
+        scope.launch {
+            playerViewModel.playInOrder(mixMaker.make(song, songs, stats))
+            showMessage("Mix: ${song.title}")
+            navigation.open(Page.NowPlaying)
+        }
+    }
+
     // --- What each page shows ---
 
     val menus = DeviceMenus(
@@ -231,7 +226,6 @@ fun RestartApp(
         navigation = navigation,
         player = playerViewModel,
         playlistActions = playlistViewModel,
-        mixes = mixes,
         stats = stats,
         settings = settings,
         musicFolder = musicFolder,
@@ -244,6 +238,7 @@ fun RestartApp(
             navigation.open(namePage)
         },
         shufflePlaylist = ::shufflePlaylist,
+        startMix = ::startMix,
     )
     val entries = menus.entries(page)
 

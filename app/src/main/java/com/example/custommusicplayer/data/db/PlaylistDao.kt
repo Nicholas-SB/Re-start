@@ -70,6 +70,16 @@ interface PlaylistDao {
     @Query("SELECT DISTINCT playlistId FROM playlist_songs WHERE songFileName = :songFileName")
     fun observePlaylistsContaining(songFileName: String): Flow<List<Long>>
 
+    /** Songs that share a playlist with [songFileName], listed once per shared playlist. */
+    @Query(
+        """
+        SELECT songFileName FROM playlist_songs
+        WHERE playlistId IN (SELECT playlistId FROM playlist_songs WHERE songFileName = :songFileName)
+          AND songFileName != :songFileName
+        """
+    )
+    suspend fun songsSharingAPlaylist(songFileName: String): List<String>
+
     // Functions with a body combine several operations. @Transaction makes them all-or-nothing,
     // so the playlist can't end up half-updated if something fails midway.
 

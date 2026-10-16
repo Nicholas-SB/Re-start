@@ -13,14 +13,13 @@ sealed interface Page {
     data object MainMenu : Page
     data object Music : Page
     data object Songs : Page
-    data object Mixes : Page
-    data class Mix(val mixId: String) : Page
     data object Stats : Page
     data object Download : Page
 
     /** Download a whole YouTube playlist into one of yours. */
     data object PlaylistImport : Page
-    data object Settings : Page
+    /** Download, Stats and the settings: everything that isn't playing music. */
+    data object Extras : Page
     data object MusicFolder : Page
     data object NowPlaying : Page
 
@@ -36,6 +35,9 @@ sealed interface Page {
 
     /** Options for one song inside a playlist: move, remove. */
     data class PlaylistEntryOptions(val playlistId: Long, val entryId: Long) : Page
+
+    /** Hold the center on a song: start a mix from it, or add it to a playlist. */
+    data class SongOptions(val songId: Long) : Page
 
     /** Pick a playlist to add [songId] to. */
     data class AddToPlaylist(val songId: Long) : Page

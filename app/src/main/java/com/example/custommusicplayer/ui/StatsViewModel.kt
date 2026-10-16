@@ -22,13 +22,4 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
     val stats: StateFlow<Map<String, SongStatsEntity>> = dao.observeAllStats()
         .map { list -> list.associateBy { it.songFileName } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
-
-    /** Plays per song in the last 30 days (counted from when the app was opened). */
-    val playsLast30Days: StateFlow<Map<String, Int>> = dao.observePlayCountsSince(System.currentTimeMillis() - THIRTY_DAYS_MS)
-        .map { rows -> rows.associate { it.songFileName to it.plays } }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
-
-    companion object {
-        private const val THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000L
-    }
 }

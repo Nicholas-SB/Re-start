@@ -17,7 +17,7 @@ data class SongStatsEntity(
     val listenedMs: Long = 0,        // total time actually spent listening
 )
 
-/** One counted play, with when it happened. Lets mixes ask "what did I play this month?". */
+/** One counted play, with when it happened. Lets a song mix ask "what do I play around this song?". */
 @Entity(
     tableName = "play_events",
     indices = [Index("playedAt")],  // "plays since X" queries filter on this column
@@ -26,10 +26,4 @@ data class PlayEventEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val songFileName: String,
     val playedAt: Long,
-)
-
-/** Result shape of the "plays per song since a date" query. */
-data class RecentPlayCount(
-    val songFileName: String,
-    val plays: Int,
 )

@@ -3,7 +3,6 @@ package com.example.custommusicplayer.ui.device
 import com.example.custommusicplayer.data.Song
 import com.example.custommusicplayer.data.db.PlaylistSummary
 import com.example.custommusicplayer.data.db.SongStatsEntity
-import com.example.custommusicplayer.data.mixes.Mix
 import com.example.custommusicplayer.ui.FolderChoice
 import com.example.custommusicplayer.ui.PlayerUiState
 import com.example.custommusicplayer.ui.PlayerViewModel
@@ -27,7 +26,6 @@ class DeviceMenus(
     private val navigation: DeviceNavigationViewModel,
     private val player: PlayerViewModel,
     private val playlistActions: PlaylistViewModel,
-    private val mixes: List<Mix>,
     private val stats: Map<String, SongStatsEntity>,
     private val settings: DeviceSettings,
     private val musicFolder: String,
@@ -37,18 +35,17 @@ class DeviceMenus(
     private val showMessage: (String) -> Unit,
     private val startNameEntry: (page: Page.NameEntry, initialText: String) -> Unit,
     private val shufflePlaylist: (playlistId: Long) -> Unit,
+    private val startMix: (song: Song) -> Unit,
 ) {
 
     fun title(page: Page): String = when (page) {
         Page.MainMenu -> "Re-start"
         Page.Music -> "Music"
         Page.Songs -> "Songs"
-        Page.Mixes -> "Mixes"
-        is Page.Mix -> mixes.firstOrNull { it.id == page.mixId }?.title ?: "Mix"
         Page.Stats -> "Stats"
         Page.Download -> "Download"
         Page.PlaylistImport -> "Import Playlist"
-        Page.Settings -> "Settings"
+        Page.Extras -> "Extras"
         Page.MusicFolder -> "Music Folder"
         Page.NowPlaying -> "Now Playing"
         Page.NowPlayingOptions -> "Options"
@@ -57,6 +54,7 @@ class DeviceMenus(
         is Page.Playlist -> playlistName(page.playlistId)
         is Page.PlaylistOptions -> playlistName(page.playlistId)
         is Page.PlaylistEntryOptions -> "Song Options"
+        is Page.SongOptions -> songsById[page.songId]?.title ?: "Song"
         is Page.AddToPlaylist -> "Add to Playlist"
         is Page.NameEntry -> if (page.renamePlaylistId != null) "Rename Playlist" else "New Playlist"
         is Page.ConfirmDelete -> "Delete Playlist?"
@@ -66,10 +64,8 @@ class DeviceMenus(
         Page.MainMenu -> mainMenu()
         Page.Music -> musicMenu()
         Page.Songs -> songsMenu()
-        Page.Mixes -> mixesMenu()
-        is Page.Mix -> mixMenu(page.mixId)
         Page.Stats -> statsMenu()
-        Page.Settings -> settingsMenu()
+        Page.Extras -> extrasMenu()
         Page.MusicFolder -> musicFolderMenu()
         Page.NowPlayingOptions -> nowPlayingOptionsMenu()
         Page.UpNext -> upNextMenu()
@@ -77,6 +73,7 @@ class DeviceMenus(
         is Page.Playlist -> playlistMenu(page.playlistId)
         is Page.PlaylistOptions -> playlistOptionsMenu(page.playlistId)
         is Page.PlaylistEntryOptions -> entryOptionsMenu(page.playlistId, page.entryId)
+        is Page.SongOptions -> songOptionsMenu(page.songId)
         is Page.AddToPlaylist -> addToPlaylistMenu(page.songId)
         is Page.ConfirmDelete -> confirmDeleteMenu(page.playlistId)
         // These draw their own content instead of a list.
@@ -87,8 +84,6 @@ class DeviceMenus(
 
     private fun mainMenu() = buildList {
         add(MenuEntry("Music", opensSubmenu = true) { navigation.open(Page.Music) })
-        add(MenuEntry("Mixes", opensSubmenu = true) { navigation.open(Page.Mixes) })
-        add(MenuEntry("Shuffle Songs") { playAll(songs, shuffle = true) })
         // Pinned playlists: one click shuffles them. Hold the center for the playlist's options.
         playlists.filter { it.pinned }.forEach { playlist ->
             add(
@@ -99,15 +94,14 @@ class DeviceMenus(
                 ) { shufflePlaylist(playlist.id) }
             )
         }
-        add(MenuEntry("Stats", opensSubmenu = true) { navigation.open(Page.Stats) })
-        add(MenuEntry("Download", opensSubmenu = true) { navigation.open(Page.Download) })
-        add(MenuEntry("Settings", opensSubmenu = true) { navigation.open(Page.Settings) })
+        add(MenuEntry("Extras", opensSubmenu = true) { navigation.open(Page.Extras) })
         if (currentSong != null) {
             add(MenuEntry("Now Playing", detail = currentSong.title, opensSubmenu = true) { navigation.open(Page.NowPlaying) })
         }
     }
 
     private fun musicMenu() = listOf(
+        MenuEntry("Shuffle Songs") { playAll(songs, shuffle = true) },
         MenuEntry("Songs", detail = plural(songs.size, "song"), opensSubmenu = true) { navigation.open(Page.Songs) },
         MenuEntry("Playlists", detail = plural(playlists.size, "playlist"), opensSubmenu = true) { navigation.open(Page.Playlists) },
     )
@@ -124,8 +118,8 @@ class DeviceMenus(
     }
 
     /**
-     * A list of songs: choosing one plays the whole list from there. Used by Songs, a mix and
-     * Stats. Holding the center offers "Add to Playlist".
+     * A list of songs: choosing one plays the whole list from there. Used by Songs and Stats.
+     * Holding the center opens the song's options (Start Mix, Add to Playlist).
      */
     private fun songListMenu(list: List<Song>) = buildList {
         list.forEachIndexed { index, song ->
@@ -134,25 +128,13 @@ class DeviceMenus(
                     song.title,
                     detail = song.artist,
                     song = song,
-                    onLongPress = { navigation.open(Page.AddToPlaylist(song.id)) },
+                    onLongPress = { navigation.open(Page.SongOptions(song.id)) },
                 ) { playAll(list, startIndex = index) }
             )
         }
     }
 
-    // --- Mixes and stats ---
-
-    private fun mixesMenu() = mixes.map { mix ->
-        MenuEntry(mix.title, detail = mix.description, opensSubmenu = true) { navigation.open(Page.Mix(mix.id)) }
-    }
-
-    /** "Play Mix", then its songs. */
-    private fun mixMenu(mixId: String): List<MenuEntry> {
-        val mix = mixes.firstOrNull { it.id == mixId } ?: return emptyList()
-        val mixSongs = mix.songFileNames.mapNotNull { songsByFileName[it] }
-        return listOf(MenuEntry("Play Mix", detail = plural(mixSongs.size, "song")) { playAll(mixSongs) }) +
-            songListMenu(mixSongs)
-    }
+    // --- Stats ---
 
     /** Totals first, then the most played songs (choosing one plays that top list). */
     private fun statsMenu(): List<MenuEntry> {
@@ -185,7 +167,10 @@ class DeviceMenus(
 
     // --- Settings ---
 
-    private fun settingsMenu() = listOf(
+    /** Extras: Download and Stats, then the settings. */
+    private fun extrasMenu() = listOf(
+        MenuEntry("Download", opensSubmenu = true) { navigation.open(Page.Download) },
+        MenuEntry("Stats", opensSubmenu = true) { navigation.open(Page.Stats) },
         MenuEntry("Music folder", detail = musicFolder, opensSubmenu = true) { navigation.open(Page.MusicFolder) },
         MenuEntry("Clicker", detail = if (settings.clickSound) "On · click sound for every wheel step" else "Off") {
             settings.toggleClickSound()
@@ -227,6 +212,7 @@ class DeviceMenus(
                 },
             ) { player.cycleRepeatMode() },
             MenuEntry("Up Next", detail = plural(playerState.upNext.size, "song"), opensSubmenu = true) { navigation.open(Page.UpNext) },
+            MenuEntry("Start Mix", detail = "Songs that go with this one") { startMix(song) },
             MenuEntry("Add to Playlist…", opensSubmenu = true) { navigation.open(Page.AddToPlaylist(song.id)) },
         )
     }
@@ -317,6 +303,7 @@ class DeviceMenus(
         }
 
         return buildList {
+            if (song != null) add(MenuEntry("Start Mix") { startMix(song) })
             if (index > 0) add(MenuEntry("Move Up") { moveTo(index - 1) })
             if (index < detail.entries.lastIndex) add(MenuEntry("Move Down") { moveTo(index + 1) })
             add(MenuEntry("Remove from Playlist") {
@@ -328,6 +315,15 @@ class DeviceMenus(
                 add(MenuEntry("Add to Another Playlist…", opensSubmenu = true) { navigation.open(Page.AddToPlaylist(song.id)) })
             }
         }
+    }
+
+    /** Like YouTube Music's song menu: a mix that starts with this song, or add it to a playlist. */
+    private fun songOptionsMenu(songId: Long): List<MenuEntry> {
+        val song = songsById[songId] ?: return emptyList()
+        return listOf(
+            MenuEntry("Start Mix", detail = "Songs that go with this one") { startMix(song) },
+            MenuEntry("Add to Playlist…", opensSubmenu = true) { navigation.open(Page.AddToPlaylist(songId)) },
+        )
     }
 
     private fun addToPlaylistMenu(songId: Long): List<MenuEntry> {
