@@ -162,6 +162,15 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         controller?.seekTo(queueIndex, 0)
     }
 
+    /** Jumps forward (+) or back (-) within the song, for holding ⏭ / ⏮. */
+    fun seekBy(deltaMs: Long) {
+        val player = controller ?: return
+        val duration = player.duration
+        // Stop just short of the end, so scanning forward doesn't skip to the next song.
+        val latest = if (duration == C.TIME_UNSET) Long.MAX_VALUE else (duration - 1_000).coerceAtLeast(0)
+        seekTo((player.currentPosition + deltaMs).coerceIn(0, latest))
+    }
+
     fun seekTo(positionMs: Long) {
         controller?.seekTo(positionMs)
         _positionMs.value = positionMs

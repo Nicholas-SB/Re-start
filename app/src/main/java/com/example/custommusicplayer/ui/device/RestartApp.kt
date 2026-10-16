@@ -317,6 +317,11 @@ fun RestartApp(
                         onPrevious = playerViewModel::skipToPrevious,
                         onNext = playerViewModel::skipToNext,
                         onPlayPause = playerViewModel::togglePlayPause,
+                        onScan = { forward, heldMs ->
+                            // Each tick (6-7 per second) jumps 2 s; after holding 2 s, 6 s per tick.
+                            val step = if (heldMs < 2_000) 2_000L else 6_000L
+                            playerViewModel.seekBy(if (forward) step else -step)
+                        },
                         modifier = Modifier.fillMaxWidth(0.8f),
                     )
                     Spacer(Modifier.height(8.dp))

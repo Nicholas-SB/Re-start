@@ -1,5 +1,6 @@
 package com.example.custommusicplayer.ui.device
 
+import android.os.SystemClock
 import android.view.HapticFeedbackConstants
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -29,14 +30,20 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.sp
 import com.example.custommusicplayer.R
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.hypot
 
 /**
  * The click wheel. Slide a finger around the ring to scroll (each step gives a little haptic
- * tick); tap MENU / ⏮ / ⏭ / ⏯ on the ring; press the center button to select, or hold it
- * for options.
+ * tick); tap MENU / ⏮ / ⏭ / ⏯ on the ring; hold ⏮ / ⏭ to rewind / fast-forward; press the
+ * center button to select, or hold it for options.
  *
  * Like the other UI pieces, it doesn't decide what anything *does*: it just reports
  * what happened through the callbacks.
@@ -50,6 +57,7 @@ fun ClickWheel(
     onPrevious: () -> Unit,
     onNext: () -> Unit,
     onPlayPause: () -> Unit,
+    onScan: (forward: Boolean, heldMs: Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val view = LocalView.current
@@ -62,6 +70,7 @@ fun ClickWheel(
     val previous by rememberUpdatedState(onPrevious)
     val next by rememberUpdatedState(onNext)
     val playPause by rememberUpdatedState(onPlayPause)
+    val scan by rememberUpdatedState(onScan)
 
     Box(
         modifier = modifier
@@ -90,21 +99,48 @@ fun ClickWheel(
                     },
                 )
             }
-            // Tapping a button on the ring. Which button depends on where the tap is.
+            // Pressing a button on the ring. onPress runs when the finger goes down; inside it,
+            // tryAwaitRelease() waits for the finger to lift (true) or the touch to turn into a
+            // wheel turn (false). That's what lets ⏮ / ⏭ tell a tap from a hold.
             .pointerInput(Unit) {
-                detectTapGestures { tap ->
-                    val cx = size.width / 2f
-                    val cy = size.height / 2f
-                    if (hypot(tap.x - cx, tap.y - cy) < size.width * CENTER_FRACTION / 2) return@detectTapGestures
-                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                    val angle = WheelRotationTracker.angleOf(tap.x, tap.y, cx, cy)
-                    when {
-                        angle in -135f..-45f -> menu()    // top
-                        angle in -45f..45f -> next()      // right
-                        angle in 45f..135f -> playPause() // bottom
-                        else -> previous()                // left
-                    }
-                }
+                detectTapGestures(
+                    onPress = { press ->
+                        val button = ringButtonAt(press.x, press.y, size) ?: return@detectTapGestures
+                        if (button == RingButton.MENU || button == RingButton.PLAY_PAUSE) {
+                            if (tryAwaitRelease()) {
+                                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                                if (button == RingButton.MENU) menu() else playPause()
+                            }
+                            return@detectTapGestures
+                        }
+
+                        val forward = button == RingButton.NEXT
+                        // Let go within HOLD_TO_SCAN_MS: a normal skip. Still holding: scan.
+                        when (withTimeoutOrNull(HOLD_TO_SCAN_MS) { tryAwaitRelease() }) {
+                            true -> {
+                                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                                if (forward) next() else previous()
+                            }
+                            false -> {}  // the touch became a wheel turn
+                            null -> {
+                                view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                                // Two things at once: tick the scan along, and wait for the finger
+                                // to lift. coroutineScope + launch runs the ticking alongside.
+                                coroutineScope {
+                                    val ticking = launch {
+                                        val start = SystemClock.uptimeMillis()
+                                        while (isActive) {
+                                            scan(forward, SystemClock.uptimeMillis() - start)
+                                            delay(SCAN_TICK_MS)
+                                        }
+                                    }
+                                    tryAwaitRelease()
+                                    ticking.cancel()
+                                }
+                            }
+                        }
+                    },
+                )
             },
     ) {
         val labelColor = DeviceColors.WheelLabel
@@ -154,3 +190,23 @@ fun ClickWheel(
 
 /** The center button's size, as a fraction of the whole wheel. */
 private const val CENTER_FRACTION = 0.38f
+
+/** How long to hold ⏮ / ⏭ before it scans instead of skipping, and how often it scans. */
+private const val HOLD_TO_SCAN_MS = 400L
+private const val SCAN_TICK_MS = 150L
+
+private enum class RingButton { MENU, NEXT, PLAY_PAUSE, PREVIOUS }
+
+/** Which ring button is at (x, y), or null for the center button. */
+private fun ringButtonAt(x: Float, y: Float, size: IntSize): RingButton? {
+    val cx = size.width / 2f
+    val cy = size.height / 2f
+    if (hypot(x - cx, y - cy) < size.width * CENTER_FRACTION / 2) return null
+    val angle = WheelRotationTracker.angleOf(x, y, cx, cy)
+    return when {
+        angle in -135f..-45f -> RingButton.MENU      // top
+        angle in -45f..45f -> RingButton.NEXT        // right
+        angle in 45f..135f -> RingButton.PLAY_PAUSE  // bottom
+        else -> RingButton.PREVIOUS                  // left
+    }
+}
