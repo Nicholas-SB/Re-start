@@ -209,7 +209,6 @@ class DeviceMenus(
             add(MenuEntry("History", detail = "Your listening, month by month", opensSubmenu = true) { navigation.open(Page.History) })
             add(MenuEntry("Listening time", detail = formatListeningTime(all.sumOf { it.listenedMs })) {})
             add(MenuEntry("Plays", detail = all.sumOf { it.playCount }.toString()) {})
-            add(MenuEntry("Skips", detail = all.sumOf { it.skipCount }.toString()) {})
             if (mostPlayed.isEmpty()) {
                 add(MenuEntry("Most played: nothing yet", detail = "A song counts once you've heard half of it") {})
             }

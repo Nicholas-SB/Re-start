@@ -1,5 +1,6 @@
 package io.github.nicholas_sb.restart.ui.device
 
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.graphics.FilterQuality
@@ -290,6 +291,12 @@ private fun SongDetails(song: Song, artLoader: AlbumArtLoader, coverStyle: Cover
 /** How long the blurred background takes to fade to the next song's. */
 private const val BACKDROP_FADE_MS = 700
 
+/**
+ * The least time between two positions of the spinning disc: about 60 a second. A bit under
+ * 1/60 s, so a 60 Hz screen still moves it every frame (and a 120 Hz one every other frame).
+ */
+private const val DISC_FRAME_GAP_NS = 15_000_000L
+
 /** How long a new song's disc takes to slide in. */
 private const val SONG_SLIDE_MS = 450
 
@@ -318,9 +325,17 @@ fun rememberDiscAngle(spinning: Boolean, animate: Boolean): () -> Float {
             // Speed up over 0.6 s. Starting from rest and accelerating evenly to `speed`
             // covers half the distance full speed would: speed * 600 / 2.
             angle.animateTo(angle.value + speed * 300, tween(600, easing = FastOutLinearInEasing))
+            // Then turn at full speed, but move the disc at most about 60 times a second. The
+            // screen can draw 120 or 165 times a second, but a disc this slow (under 1 degree
+            // per frame) looks the same at 60, and every frame not drawn saves battery. When
+            // the angle doesn't change, Compose doesn't redraw anything.
+            var shownAt = withFrameNanos { it }
             while (true) {
-                angle.animateTo(angle.value + 360f, tween(DISC_TURN_MS, easing = LinearEasing))
-                angle.snapTo(angle.value % 360f)  // keep the number small; looks the same
+                val now = withFrameNanos { it }
+                if (now - shownAt < DISC_FRAME_GAP_NS) continue
+                // Worked out from the time that passed, so the speed stays exact.
+                angle.snapTo((angle.value + speed * (now - shownAt) / 1_000_000f) % 360f)
+                shownAt = now
             }
         } else {
             // Coast to a stop over 0.8 s (again half of what full speed would cover).
@@ -331,8 +346,8 @@ fun rememberDiscAngle(spinning: Boolean, animate: Boolean): () -> Float {
 }
 
 /**
- * The cover as a record: round, with faint grooves, a still reflection of light, and a
- * spindle hole in the middle. Only the picture turns; the grooves are circles (they look the
+ * The cover as a record: round, with faint grooves and a still reflection of light (no
+ * spindle hole, so the middle of the cover shows). Only the picture turns; the grooves are circles (they look the
  * same at any angle) and the reflection stays put, which is what makes it look like it spins.
  */
 @Composable
@@ -373,10 +388,6 @@ private fun Disc(song: Song, artLoader: AlbumArtLoader, angle: () -> Float, modi
                 ),
                 radius = radius,
             )
-            // The center: a dark ring around the spindle hole, which shows the screen behind.
-            drawCircle(DeviceColors.Disc, radius = radius * 0.12f)
-            drawCircle(Color.White.copy(alpha = 0.12f), radius = radius * 0.12f, style = Stroke(width = 1.dp.toPx()))
-            drawCircle(DeviceColors.Screen, radius = radius * 0.035f)
             // The rim.
             drawCircle(Color.Black.copy(alpha = 0.35f), radius = radius - 1.dp.toPx(), style = Stroke(width = 2.dp.toPx()))
         }
