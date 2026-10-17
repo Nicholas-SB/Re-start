@@ -106,7 +106,7 @@ fun DownloadScreen(
             Spacer(Modifier.height(16.dp))
         }
         items(jobs.filter { it.needsAttention() }, key = { it.id }) { job ->
-            DownloadJobCard(job, onFindSameSong = viewModel::findSameSong)
+            DownloadJobCard(job, onFindSameSong = viewModel::findSameSong, onRemove = viewModel::removeJob)
         }
     }
 }
@@ -172,7 +172,7 @@ fun PlaylistImportScreen(viewModel: DownloadViewModel, playlists: List<PlaylistC
             }
         }
         items(jobs.filter { it.needsAttention() }, key = { it.id }) { job ->
-            DownloadJobCard(job, onFindSameSong = viewModel::findSameSong)
+            DownloadJobCard(job, onFindSameSong = viewModel::findSameSong, onRemove = viewModel::removeJob)
         }
     }
 }
@@ -261,7 +261,7 @@ private fun SaveToMenu(playlists: List<PlaylistChoice>, chosen: PlaylistChoice?,
 }
 
 @Composable
-private fun DownloadJobCard(job: DownloadJob, onFindSameSong: (jobId: Int) -> Unit) {
+private fun DownloadJobCard(job: DownloadJob, onFindSameSong: (jobId: Int) -> Unit, onRemove: (jobId: Int) -> Unit) {
     // Tapping a failed one offers to open it on YouTube (to see what's wrong), or, when we know
     // which song it was, to look for the same song on YouTube Music. Nothing happens by itself.
     val failed = job.status is DownloadStatus.Failed
@@ -282,7 +282,7 @@ private fun DownloadJobCard(job: DownloadJob, onFindSameSong: (jobId: Int) -> Un
                 .fillMaxWidth()
                 .padding(bottom = 8.dp)
                 .clip(CardDefaults.shape)  // so the tap ripple has the card's rounded corners
-                .clickable(enabled = failed) { if (canSearch) showOptions = true else openOnYoutube() },
+                .clickable(enabled = failed) { showOptions = true },
         ) {
             Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
@@ -326,7 +326,7 @@ private fun DownloadJobCard(job: DownloadJob, onFindSameSong: (jobId: Int) -> Un
                 }
                 if (failed) {
                     Text(
-                        if (canSearch) "Tap for options" else "Tap to open on YouTube",
+                        "Tap for options",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -348,9 +348,15 @@ private fun DownloadJobCard(job: DownloadJob, onFindSameSong: (jobId: Int) -> Un
                 showOptions = false
                 openOnYoutube()
             })
-            DropdownMenuItem(text = { Text("Find the same song") }, onClick = {
+            if (canSearch) {
+                DropdownMenuItem(text = { Text("Find the same song") }, onClick = {
+                    showOptions = false
+                    onFindSameSong(job.id)
+                })
+            }
+            DropdownMenuItem(text = { Text("Remove from list") }, onClick = {
                 showOptions = false
-                onFindSameSong(job.id)
+                onRemove(job.id)
             })
         }
     }

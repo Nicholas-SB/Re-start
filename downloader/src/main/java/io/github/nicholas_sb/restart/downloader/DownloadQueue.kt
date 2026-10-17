@@ -218,6 +218,11 @@ class DownloadQueue private constructor(private val context: Context) {
         }
     }
 
+    /** Takes a failed song off the list (it stays failed; it just isn't shown any more). */
+    fun removeJob(jobId: Int) {
+        _jobs.update { jobs -> jobs.filterNot { it.id == jobId && it.status is DownloadStatus.Failed } }
+    }
+
     /** A playlist's failed song was found after all: one fewer failed on the playlist's card. */
     private fun countRecovered(importId: Int, title: String, added: Boolean) = updateJob(importId) { card ->
         val progress = card.status as? DownloadStatus.PlaylistProgress ?: return@updateJob card

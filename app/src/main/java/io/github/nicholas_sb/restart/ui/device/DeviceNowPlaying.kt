@@ -1,5 +1,6 @@
 package io.github.nicholas_sb.restart.ui.device
 
+import androidx.compose.animation.Crossfade
 import android.os.SystemClock
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.runtime.mutableLongStateOf
@@ -111,22 +112,27 @@ fun DeviceNowPlaying(
     }
 
     // A soft wash of the cover's colors behind everything (blurred and faded).
-    val backdrop by produceState<Bitmap?>(initialValue = null, song.id) {
-        value = artLoader.load(song)
-    }
+    // The last cover loaded is kept until the next one is ready, so the background can fade
+    // from one to the other instead of going blank in between.
+    var backdrop by remember { mutableStateOf<Bitmap?>(null) }
+    LaunchedEffect(song.id) { backdrop = artLoader.load(song) }
     val lyricsFound = showLyrics && lyricsState is LyricsState.Found
 
     Box(modifier = modifier.fillMaxSize()) {
         // Modifier.blur only works on Android 12+; without it the picture would be sharp
         // and distracting, so older phones simply keep the plain cream screen.
-        val art = backdrop
-        if (art != null && !lyricsFound && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            Image(
-                bitmap = art.asImageBitmap(),
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.matchParentSize().blur(40.dp).alpha(0.35f),
-            )
+        if (!lyricsFound && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            // Crossfade: the new song's background fades in while the old one fades out.
+            Crossfade(targetState = backdrop, animationSpec = motionSpec(BACKDROP_FADE_MS), modifier = Modifier.matchParentSize(), label = "backdrop") { art ->
+                if (art != null) {
+                    Image(
+                        bitmap = art.asImageBitmap(),
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize().blur(40.dp).alpha(0.35f),
+                    )
+                }
+            }
         }
 
         Column(modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = 8.dp)) {
@@ -200,8 +206,11 @@ private fun SongInfo(
             // to the first counts as forward too.
             val wrappedAround = from == queueSize && to == 1
             val direction = if (to >= from || wrappedAround) 1 else -1
-            (slideInHorizontally(slide) { width -> direction * width } togetherWith
-                slideOutHorizontally(slide) { width -> -direction * width })
+            // A bit more than one width: this area sits inside the screen's padding, so sliding
+            // exactly its width left a sliver of the old disc (and its shadow) in view.
+            val distance = { width: Int -> width + width / 4 }
+            (slideInHorizontally(slide) { width -> direction * distance(width) } togetherWith
+                slideOutHorizontally(slide) { width -> -direction * distance(width) })
                 // Don't cut the discs off at this area's edge: they slide on until the
                 // screen's frame, which clips them.
                 .using(SizeTransform(clip = false))
@@ -261,6 +270,9 @@ private fun SongDetails(song: Song, artLoader: AlbumArtLoader, coverStyle: Cover
         }
     }
 }
+
+/** How long the blurred background takes to fade to the next song's. */
+private const val BACKDROP_FADE_MS = 700
 
 /** How long a new song's disc takes to slide in. */
 private const val SONG_SLIDE_MS = 450

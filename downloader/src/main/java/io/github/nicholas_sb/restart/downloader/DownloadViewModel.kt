@@ -67,6 +67,8 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
     fun importPlaylist(text: String, target: ImportTarget) = queue.importPlaylist(text, target)
 
     fun findSameSong(jobId: Int) = queue.findSameSong(jobId)
+
+    fun removeJob(jobId: Int) = queue.removeJob(jobId)
 }
 
 /**
