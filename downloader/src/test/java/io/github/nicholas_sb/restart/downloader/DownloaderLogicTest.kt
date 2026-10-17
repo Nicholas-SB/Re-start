@@ -208,6 +208,13 @@ class DownloaderLogicTest {
     }
 
     @Test
+    fun ignoresSpacesAKeyboardAddedToALink() {
+        val typed = "https://music. youtube. com/playlist? list=PL7UYJaSG0LHzLtUWrRjW8yEBVVFMk5CpA"
+        assertEquals(LinkKind.YOUTUBE, linkKind(typed))
+        assertEquals("https://music.youtube.com/playlist?list=PL7UYJaSG0LHzLtUWrRjW8yEBVVFMk5CpA", playlistLink(typed)?.url)
+    }
+
+    @Test
     fun rejectsLinksWithoutAProperPlaylist() {
         listOf(
             "https://youtu.be/Kohn9PRanoY",                              // just a song

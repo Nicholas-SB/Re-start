@@ -102,7 +102,7 @@ fun isWholePlaylist(text: String): Boolean = playlistLink(text)?.let { it.videoI
 /** The playlist in a pasted link, or null if it isn't a YouTube link with a playlist in it. */
 fun playlistLink(text: String): PlaylistLink? {
     if (linkKind(text) != LinkKind.YOUTUBE) return null
-    val uri = URI(text.trim())
+    val uri = URI(cleanLink(text))
     // The query is the part after "?", e.g. "list=PL123&si=abc". Split it into name/value pairs.
     val params = uri.rawQuery.orEmpty().split('&').mapNotNull { pair ->
         pair.split('=', limit = 2).takeIf { it.size == 2 }?.let { (name, value) -> name to value }

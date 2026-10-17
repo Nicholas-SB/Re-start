@@ -62,6 +62,12 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
     fun importPlaylist(text: String, target: ImportTarget) = queue.importPlaylist(text, target)
 }
 
+/**
+ * The link without any spaces. Links never contain spaces, but some keyboards add one after
+ * every "." or "?" ("music. youtube. com/playlist? list=...").
+ */
+fun cleanLink(text: String): String = text.filterNot { it.isWhitespace() }
+
 /** What kind of link was pasted. */
 enum class LinkKind { YOUTUBE, SPOTIFY, UNKNOWN }
 
@@ -77,7 +83,7 @@ private val youtubeHosts = setOf("youtube.com", "www.youtube.com", "m.youtube.co
  */
 fun linkKind(text: String): LinkKind {
     val uri = try {
-        java.net.URI(text.trim())  // throws on spaces and other characters links can't contain
+        java.net.URI(cleanLink(text))  // throws on characters links can't contain
     } catch (e: java.net.URISyntaxException) {
         return LinkKind.UNKNOWN
     }

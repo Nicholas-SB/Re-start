@@ -69,7 +69,7 @@ class DownloadQueue private constructor(private val context: Context) {
     fun download(url: String) {
         // Double-check here too: only real YouTube links ever reach yt-dlp.
         if (linkKind(url) != LinkKind.YOUTUBE || isWholePlaylist(url)) return
-        val job = DownloadJob(id = nextId++, url = url.trim())
+        val job = DownloadJob(id = nextId++, url = cleanLink(url))
         _jobs.update { listOf(job) + it }  // newest first
         launchTask {
             songsQueued(1)
