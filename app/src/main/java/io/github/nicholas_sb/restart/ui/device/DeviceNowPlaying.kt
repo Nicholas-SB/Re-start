@@ -318,6 +318,10 @@ private const val DISC_TURN_MS = 16_000
 @Composable
 fun rememberDiscSpin(spinning: Boolean, animate: Boolean): DiscSpin {
     val angle = remember { Animatable(0f) }
+    val spin = remember { DiscSpin { angle.value } }
+    // Told right here, not in the effect below (which runs only after the screen is built):
+    // the new song's disc, built in the same pass, must already know the music has stopped.
+    spin.spinningChanged(spinning)
     LaunchedEffect(spinning, animate) {
         if (!animate) return@LaunchedEffect
         // The speed while spinning, in degrees per millisecond.
@@ -343,42 +347,59 @@ fun rememberDiscSpin(spinning: Boolean, animate: Boolean): DiscSpin {
             angle.animateTo(angle.value + speed * 400, tween(800, easing = LinearOutSlowInEasing))
         }
     }
-    return remember { DiscSpin { angle.value } }
+    return spin
 }
 
 /**
  * The disc's turning, kept by the whole app (so it doesn't reset when you leave Now Playing).
  * There's one angle that keeps going round; each song's disc is turned by how far it went
- * since that song's disc first appeared, so every new song's disc starts out straight.
+ * since that song's disc started turning, so every new song's disc starts out straight.
+ * A new disc that arrives while the music is stopped (like during Record change's pause)
+ * stays still until the music starts, even while the old disc is still slowing down.
  */
 class DiscSpin(private val currentAngle: () -> Float) {
-    // The song whose disc came last, and the angle at that moment.
-    private var songId: Long? = null
-    private var startAngle = 0f
+    // The angle at which each disc started turning; null = waiting for the music to start.
+    // Only the current song and the one before it (maybe still sliding away) are kept.
+    private val startAngles = mutableMapOf<Long, Float?>()
+    private var currentSongId: Long? = null
+    private var spinning = false
 
-    fun angle(): Float = currentAngle()
-
-    /** The angle at which [songId]'s disc started: right now, if it's a new song. */
-    fun startAngleFor(songId: Long): Float {
-        if (songId != this.songId) {
-            this.songId = songId
-            // Read without Compose "watching" it: the caller shouldn't redraw on every turn.
-            startAngle = Snapshot.withoutReadObservation { currentAngle() }
-        }
-        return startAngle
+    /** How far [songId]'s disc is turned. Read while drawing, so it redraws as it turns. */
+    fun rotationFor(songId: Long): Float {
+        // Read the angle first, even for a disc that's waiting: reading it is what makes
+        // Compose redraw when it changes, so the disc starts turning once the music starts.
+        val angle = currentAngle()
+        val start = startAngles[songId] ?: return 0f
+        return angle - start
     }
+
+    /** A disc for [songId] is shown. Coming back from a menu to the same song changes nothing. */
+    fun show(songId: Long) {
+        if (songId == currentSongId) return
+        startAngles.keys.retainAll { it == currentSongId }
+        currentSongId = songId
+        startAngles[songId] = if (spinning) angleNow() else null
+    }
+
+    /** From rememberDiscSpin: the music started or stopped. */
+    fun spinningChanged(spinning: Boolean) {
+        this.spinning = spinning
+        val songId = currentSongId ?: return
+        if (spinning && startAngles[songId] == null) startAngles[songId] = angleNow()
+    }
+
+    // Read without Compose "watching" it: whoever asks shouldn't redraw on every turn for it.
+    private fun angleNow() = Snapshot.withoutReadObservation { currentAngle() }
 }
 
 /**
  * The cover as a record: round, with faint grooves and a still reflection of light (no
- * spindle hole, so the middle of the cover shows). Only the picture turns; the grooves are circles (they look the
- * same at any angle) and the reflection stays put, which is what makes it look like it spins.
+ * spindle hole, so the middle of the cover shows). Only the picture turns; the grooves are
+ * circles (they look the same at any angle) and the reflection stays put, which is what makes it look like it spins.
  */
 @Composable
 private fun Disc(song: Song, artLoader: AlbumArtLoader, spin: DiscSpin, modifier: Modifier = Modifier) {
-    // Kept for as long as this disc is shown; coming back from a menu asks again and gets the
-    // same angle back (it's still the same song), so the disc carries on where it was.
-    val startAngle = remember(song.id) { spin.startAngleFor(song.id) }
+    remember(song.id) { spin.show(song.id) }
     Box(
         modifier = modifier
             .shadow(elevation = 12.dp, shape = CircleShape)
@@ -390,7 +411,7 @@ private fun Disc(song: Song, artLoader: AlbumArtLoader, spin: DiscSpin, modifier
             artLoader = artLoader,
             sizePx = AlbumArtLoader.LARGE_SIZE_PX,
             cornerRadius = 0.dp,
-            modifier = Modifier.fillMaxSize().graphicsLayer { rotationZ = spin.angle() - startAngle },
+            modifier = Modifier.fillMaxSize().graphicsLayer { rotationZ = spin.rotationFor(song.id) },
         )
         Canvas(modifier = Modifier.fillMaxSize()) {
             val radius = size.minDimension / 2
