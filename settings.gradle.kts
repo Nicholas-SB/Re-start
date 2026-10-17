@@ -22,7 +22,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Custom Music Player"
+rootProject.name = "Re-start"
 include(":app")
 // Optional: song + lyrics downloader. The player works without it (see app/build.gradle.kts).
 include(":downloader")

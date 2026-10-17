@@ -6,7 +6,7 @@ plugins {
 // An Android *library* module: code and UI that the app module includes, but that can't
 // run on its own. Keeping the downloader separate means the player never depends on it.
 android {
-    namespace = "com.example.custommusicplayer.downloader"
+    namespace = "io.github.nicholas_sb.restart.downloader"
     compileSdk {
         version = release(37)
     }

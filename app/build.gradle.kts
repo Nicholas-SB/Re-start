@@ -6,13 +6,13 @@ plugins {
 }
 
 android {
-    namespace = "com.example.custommusicplayer"
+    namespace = "io.github.nicholas_sb.restart"
     compileSdk {
         version = release(37)
     }
 
     defaultConfig {
-        applicationId = "com.example.custommusicplayer"
+        applicationId = "io.github.nicholas_sb.restart"
         minSdk = 24
         targetSdk = 37
         versionCode = 1
