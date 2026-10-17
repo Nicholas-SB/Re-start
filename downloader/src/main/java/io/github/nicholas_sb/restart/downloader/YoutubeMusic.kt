@@ -44,20 +44,32 @@ class YoutubeMusic(context: Context) {
     }
 
     /**
-     * The top "Songs" result on YouTube Music for [title] by [artist], with its real title,
-     * artist and length (one call: search, then read the first result in full), or null.
+     * The YouTube Music song that best matches [title] by [artist], with its real title, artist
+     * and length, or null. Looks at the first few "Songs" results and takes the one whose title
+     * matches (YouTube Music often adds an English title: "あのバンド - That band"), else the
+     * first. (Asking yt-dlp for "result 1" in full doesn't always give the first one listed.)
      */
     suspend fun findSong(title: String, artist: String?): PlaylistSong? {
         downloader.prepare {}
-        return withContext(Dispatchers.IO) {
+        val best = withContext(Dispatchers.IO) {
             val query = URLEncoder.encode(listOfNotNull(artist, title).joinToString(" "), "UTF-8")
             val request = YoutubeDLRequest("https://music.youtube.com/search?q=$query#songs").apply {
-                addOption("--playlist-items", "1")
+                addOption("--flat-playlist")
+                addOption("--playlist-items", "1-5")
                 addOption("-J")
             }
-            lastJson(YoutubeDL.getInstance().execute(request).out)
-                .optJSONArray("entries")?.optJSONObject(0)?.toSong()
-        }
+            val entries = lastJson(YoutubeDL.getInstance().execute(request).out).optJSONArray("entries")
+            val results = (0 until (entries?.length() ?: 0)).mapNotNull { index ->
+                val entry = entries!!.getJSONObject(index)
+                val id = entry.optString("id").takeIf(::isVideoId) ?: return@mapNotNull null
+                id to entry.optString("title")
+            }
+            val wanted = simplify(title)
+            results.firstOrNull { (_, resultTitle) ->
+                simplify(resultTitle) == wanted || simplify(resultTitle.substringBefore(" - ")) == wanted
+            } ?: results.firstOrNull()
+        } ?: return null
+        return songDetails(best.first)
     }
 
     /** What YouTube knows about a video as a song (its real title and artist), or null if it isn't linked to one. */
