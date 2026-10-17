@@ -5,6 +5,7 @@ import android.annotation.SuppressLint
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -12,11 +13,13 @@ import android.os.SystemClock
 import android.telephony.PhoneStateListener
 import android.telephony.TelephonyCallback
 import android.telephony.TelephonyManager
+import android.util.Log
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.ResolvingDataSource
@@ -96,6 +99,47 @@ class PlaybackService : MediaSessionService() {
                 player.prepare()
                 player.play()
             }
+        }
+    }
+
+    // --- Battery saver (audio offload) ---
+    // Normally the main processor decodes the music and keeps waking up to do it. With
+    // "offload", the phone's low-power audio chip decodes it instead, so with the screen off
+    // the processor can sleep. Not every phone does it well, so it's a switch in Extras.
+
+    private val settingsPrefs by lazy { getSharedPreferences("device_settings", Context.MODE_PRIVATE) }
+
+    // Kept in a field: SharedPreferences only holds a weak reference to its listeners.
+    private val batterySaverSwitch = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == KEY_AUDIO_OFFLOAD) applyBatterySaver()
+    }
+
+    @OptIn(UnstableApi::class)
+    private fun applyBatterySaver() {
+        val enabled = settingsPrefs.getBoolean(KEY_AUDIO_OFFLOAD, true)
+        val offload = TrackSelectionParameters.AudioOffloadPreferences.Builder()
+            .setAudioOffloadMode(
+                if (enabled) TrackSelectionParameters.AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_ENABLED
+                else TrackSelectionParameters.AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_DISABLED
+            )
+            // Don't insist on gapless: more phones can offload, and our songs are mostly singles.
+            .setIsGaplessSupportRequired(false)
+            .build()
+        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+            .setAudioOffloadPreferences(offload)
+            .build()
+    }
+
+    /** Writes to the log when the audio chip takes over or gives back, to check it works. */
+    @OptIn(UnstableApi::class)
+    private val offloadLogger = object : ExoPlayer.AudioOffloadListener {
+        override fun onOffloadedPlayback(offloadedPlayback: Boolean) {
+            Log.i(TAG, "Audio offload ${if (offloadedPlayback) "on" else "off"}")
+        }
+
+        // While offloaded, the player itself goes to sleep between the chip's requests for more audio.
+        override fun onSleepingForOffloadChanged(sleepingForOffload: Boolean) {
+            Log.i(TAG, "Sleeping while the audio chip plays: $sleepingForOffload")
         }
     }
 
@@ -230,6 +274,9 @@ class PlaybackService : MediaSessionService() {
         player.addListener(reshuffleListener)
         player.addListener(statsListener)
         player.addListener(skipBrokenStreams)
+        player.addAudioOffloadListener(offloadLogger)
+        applyBatterySaver()
+        settingsPrefs.registerOnSharedPreferenceChangeListener(batterySaverSwitch)
 
         mediaSession = MediaSession.Builder(this, player)
             .setSessionActivity(openAppIntent())
@@ -250,6 +297,7 @@ class PlaybackService : MediaSessionService() {
     override fun onDestroy() {
         listeningTracker.songEnded(userSkipped = false)  // save the song that was playing
         stopWatchingCalls()
+        settingsPrefs.unregisterOnSharedPreferenceChangeListener(batterySaverSwitch)
         player.removeListener(reshuffleListener)
         player.removeListener(statsListener)
         player.release()
@@ -264,3 +312,8 @@ class PlaybackService : MediaSessionService() {
         return PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_IMMUTABLE)
     }
 }
+
+private const val TAG = "PlaybackService"
+
+/** Same key as DeviceSettings' "Battery saver" switch. */
+private const val KEY_AUDIO_OFFLOAD = "audio_offload"

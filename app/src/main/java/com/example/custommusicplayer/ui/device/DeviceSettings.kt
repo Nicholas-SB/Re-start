@@ -46,6 +46,8 @@ class DeviceSettings(context: Context) {
         private set
     var pauseForCalls by mutableStateOf(prefs.getBoolean(KEY_PAUSE_FOR_CALLS, false))
         private set
+    var batterySaver by mutableStateOf(prefs.getBoolean(KEY_AUDIO_OFFLOAD, true))
+        private set
     var songSort by mutableStateOf(
         SongSort.entries.firstOrNull { it.name == prefs.getString(KEY_SONG_SORT, null) } ?: SongSort.A_TO_Z
     )
@@ -64,6 +66,11 @@ class DeviceSettings(context: Context) {
     fun changePauseForCalls(on: Boolean) {
         pauseForCalls = on
         prefs.edit().putBoolean(KEY_PAUSE_FOR_CALLS, on).apply()  // PlaybackService reads this
+    }
+
+    fun toggleBatterySaver() {
+        batterySaver = !batterySaver
+        prefs.edit().putBoolean(KEY_AUDIO_OFFLOAD, batterySaver).apply()  // PlaybackService reads this
     }
 
     fun cycleSongSort() {
@@ -85,6 +92,7 @@ class DeviceSettings(context: Context) {
         const val KEY_VIBRATION_LEVEL = "vibration_level"
         const val KEY_SONG_SORT = "song_sort"
         const val KEY_PAUSE_FOR_CALLS = "pause_for_calls"
+        const val KEY_AUDIO_OFFLOAD = "audio_offload"
     }
 }
 

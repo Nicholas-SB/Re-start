@@ -186,6 +186,9 @@ class DeviceMenus(
         MenuEntry("Pause for calls", detail = if (settings.pauseForCalls) "On · even when the ringer is silent" else "Off") {
             togglePauseForCalls()
         },
+        MenuEntry("Battery saver", detail = if (settings.batterySaver) "On · the audio chip plays with the screen off" else "Off") {
+            settings.toggleBatterySaver()
+        },
         MenuEntry("About", detail = "Re-start · your music, your player") {},
     )
 
