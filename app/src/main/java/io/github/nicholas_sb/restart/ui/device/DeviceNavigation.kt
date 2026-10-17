@@ -49,6 +49,12 @@ sealed interface Page {
     data class NameEntry(val renamePlaylistId: Long? = null, val firstSongId: Long? = null) : Page
 
     data class ConfirmDelete(val playlistId: Long) : Page
+
+    /** Back up playlists, stats and settings to a file, or restore them from one. */
+    data object Backup : Page
+
+    /** "Replace everything with this backup?" after picking a backup file. */
+    data object ConfirmRestore : Page
 }
 
 /**

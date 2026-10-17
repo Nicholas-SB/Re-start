@@ -1,5 +1,10 @@
 package io.github.nicholas_sb.restart.ui.device
 
+import android.content.Context
+import androidx.compose.runtime.mutableIntStateOf
+import io.github.nicholas_sb.restart.data.backup.Backup
+import io.github.nicholas_sb.restart.data.backup.BackupManager
+import java.time.LocalDate
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
@@ -165,8 +170,10 @@ fun RestartApp(
     val acceleration = remember { WheelAcceleration() }
 
     // Settings, and the vibration/click the wheel makes (which depends on them).
-    val settings = remember { DeviceSettings(context) }
-    val feedback = remember { WheelFeedback(context, settings) }
+    // Bumped after a restore, to load the restored settings fresh.
+    var settingsVersion by remember { mutableIntStateOf(0) }
+    val settings = remember(settingsVersion) { DeviceSettings(context) }
+    val feedback = remember(settings) { WheelFeedback(context, settings) }
     // DisposableEffect: run cleanup when this leaves the screen (here: free the click sounds).
     DisposableEffect(feedback) { onDispose { feedback.release() } }
 
@@ -258,6 +265,56 @@ fun RestartApp(
         if (page == Page.ForYou) discoverViewModel.load(songs, stats)
     }
 
+    // --- Backup & restore ---
+    // Android's file picker (the "Storage Access Framework"): you choose where to save or what
+    // to open, and the app gets a content:// address for just that file. No storage permission.
+    val backupManager = remember { BackupManager(context.applicationContext) }
+    val backupPrefs = remember { context.getSharedPreferences("backup", Context.MODE_PRIVATE) }
+    var lastBackupAt by remember { mutableLongStateOf(backupPrefs.getLong(KEY_LAST_BACKUP, 0)) }
+    var pendingRestore by remember { mutableStateOf<Backup?>(null) }
+
+    val saveBackup = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult  // cancelled
+        scope.launch {
+            try {
+                val out = context.contentResolver.openOutputStream(uri) ?: error("Couldn't open the file")
+                backupManager.write(backupManager.current(), out)
+                lastBackupAt = System.currentTimeMillis()
+                backupPrefs.edit().putLong(KEY_LAST_BACKUP, lastBackupAt).apply()
+                showMessage("Backed up")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                showMessage("Backup failed: ${e.message}")
+            }
+        }
+    }
+    val openBackup = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            try {
+                val input = context.contentResolver.openInputStream(uri) ?: error("Couldn't open the file")
+                pendingRestore = backupManager.read(input)
+                navigation.open(Page.ConfirmRestore)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                showMessage(e.message ?: "Couldn't read that file")
+            }
+        }
+    }
+    fun restoreBackup() {
+        val backup = pendingRestore ?: return
+        scope.launch {
+            backupManager.restore(backup)
+            pendingRestore = null
+            settingsVersion++
+            backup.musicFolder?.let(libraryViewModel::setMusicFolder)
+            navigation.backTo(Page.Extras)
+            showMessage("Restored ${backup.summary}")
+        }
+    }
+
     // --- What each page shows ---
 
     val menus = DeviceMenus(
@@ -285,6 +342,12 @@ fun RestartApp(
             navigation.open(namePage)
         },
         shufflePlaylist = ::shufflePlaylist,
+        backUpNow = { saveBackup.launch("Re-start backup ${LocalDate.now()}.json") },
+        // Any file type: some file managers don't label .json files as JSON.
+        pickBackupFile = { openBackup.launch(arrayOf("*/*")) },
+        pendingRestore = pendingRestore,
+        restoreBackup = ::restoreBackup,
+        lastBackupAt = lastBackupAt.takeIf { it > 0 },
         startMix = ::startMix,
         downloadSong = ::downloadSong,
         forYou = forYou,
@@ -552,3 +615,5 @@ private fun StatusBarIcons() {
         }
     }
 }
+
+private const val KEY_LAST_BACKUP = "last_backup_at"

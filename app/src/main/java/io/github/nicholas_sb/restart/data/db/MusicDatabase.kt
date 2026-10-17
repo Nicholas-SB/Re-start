@@ -29,6 +29,7 @@ abstract class MusicDatabase : RoomDatabase() {
 
     abstract fun playlistDao(): PlaylistDao
     abstract fun statsDao(): StatsDao
+    abstract fun backupDao(): BackupDao
 
     companion object {
         // @Volatile: writes to this field are immediately visible to other threads.

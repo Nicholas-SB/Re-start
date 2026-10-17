@@ -1,5 +1,7 @@
 package io.github.nicholas_sb.restart.ui.device
 
+import io.github.nicholas_sb.restart.data.backup.Backup
+import io.github.nicholas_sb.restart.ui.formatDateTime
 import io.github.nicholas_sb.restart.data.Song
 import io.github.nicholas_sb.restart.data.db.PlaylistSummary
 import io.github.nicholas_sb.restart.data.db.SongStatsEntity
@@ -37,6 +39,11 @@ class DeviceMenus(
     private val showMessage: (String) -> Unit,
     private val startNameEntry: (page: Page.NameEntry, initialText: String) -> Unit,
     private val shufflePlaylist: (playlistId: Long) -> Unit,
+    private val backUpNow: () -> Unit,
+    private val pickBackupFile: () -> Unit,
+    private val pendingRestore: Backup?,
+    private val restoreBackup: () -> Unit,
+    private val lastBackupAt: Long?,
     private val startMix: (song: Song) -> Unit,
     private val downloadSong: (song: Song) -> Unit,
     private val forYou: ForYouState,
@@ -64,6 +71,8 @@ class DeviceMenus(
         is Page.AddToPlaylist -> "Add to Playlist"
         is Page.NameEntry -> if (page.renamePlaylistId != null) "Rename Playlist" else "New Playlist"
         is Page.ConfirmDelete -> "Delete Playlist?"
+        Page.Backup -> "Backup"
+        Page.ConfirmRestore -> "Restore Backup?"
     }
 
     fun entries(page: Page): List<MenuEntry> = when (page) {
@@ -83,6 +92,8 @@ class DeviceMenus(
         is Page.SongOptions -> songOptionsMenu(page.songId)
         is Page.AddToPlaylist -> addToPlaylistMenu(page.songId)
         is Page.ConfirmDelete -> confirmDeleteMenu(page.playlistId)
+        Page.Backup -> backupMenu()
+        Page.ConfirmRestore -> confirmRestoreMenu()
         // These draw their own content instead of a list.
         Page.NowPlaying, Page.Download, Page.PlaylistImport, is Page.NameEntry -> emptyList()
     }
@@ -179,6 +190,9 @@ class DeviceMenus(
     private fun extrasMenu() = listOf(
         MenuEntry("Download", opensSubmenu = true) { navigation.open(Page.Download) },
         MenuEntry("Stats", opensSubmenu = true) { navigation.open(Page.Stats) },
+        MenuEntry("Backup", detail = "Save or restore playlists, stats and settings", opensSubmenu = true) {
+            navigation.open(Page.Backup)
+        },
         MenuEntry("Music folder", detail = musicFolder, opensSubmenu = true) { navigation.open(Page.MusicFolder) },
         MenuEntry("Animations", detail = if (settings.animations) "On · slides, fades and a spinning disc" else "Off") {
             settings.toggleAnimations()
@@ -423,6 +437,27 @@ class DeviceMenus(
                 playlistActions.deletePlaylist(playlistId)
                 showMessage("Deleted $name")
                 navigation.backTo(Page.Playlists)
+            },
+        )
+    }
+
+    // --- Backup ---
+
+    /** Save everything to a file you pick, or load it back from one. */
+    private fun backupMenu() = listOf(
+        MenuEntry("Back Up Now", detail = lastBackupAt?.let { "Last backup: ${formatDateTime(it)}" } ?: "Playlists, stats and settings, to a file") {
+            backUpNow()
+        },
+        MenuEntry("Restore…", detail = "Replace them with a backup file") { pickBackupFile() },
+    )
+
+    /** Cancel comes first, so a stray press of the center can't wipe anything. */
+    private fun confirmRestoreMenu(): List<MenuEntry> {
+        val backup = pendingRestore ?: return emptyList()
+        return listOf(
+            MenuEntry("Cancel") { navigation.back() },
+            MenuEntry("Replace Everything", detail = "With ${backup.summary}, from ${formatDateTime(backup.createdAt)}") {
+                restoreBackup()
             },
         )
     }
