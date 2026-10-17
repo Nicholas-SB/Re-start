@@ -16,14 +16,17 @@ import androidx.room.RoomDatabase
  *  1. playlists
  *  2. + listening stats (song_stats, play_events)
  *  3. + playlists.pinned (pinned to the main menu)
+ *  4. + listening_days, play_events.title/artist (monthly history, streamed songs)
  *
  * Adding new tables is simple enough that Room can write the migration itself
  * (AutoMigration), by comparing the saved schema files in app/schemas/.
  */
 @Database(
-    entities = [PlaylistEntity::class, PlaylistSongEntity::class, SongStatsEntity::class, PlayEventEntity::class],
-    version = 3,
-    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3)],
+    entities = [
+        PlaylistEntity::class, PlaylistSongEntity::class, SongStatsEntity::class, PlayEventEntity::class, ListeningDayEntity::class,
+    ],
+    version = 4,
+    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4)],
 )
 abstract class MusicDatabase : RoomDatabase() {
 

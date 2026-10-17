@@ -20,6 +20,12 @@ sealed interface Page {
     /** New songs from YouTube Music, picked from what you play most. */
     data object ForYou : Page
     data object Stats : Page
+
+    /** Listening history, month by month. */
+    data object History : Page
+
+    /** One month of listening history ("2026-10"). */
+    data class Month(val month: String) : Page
     data object Download : Page
 
     /** Download a whole YouTube playlist into one of yours. */

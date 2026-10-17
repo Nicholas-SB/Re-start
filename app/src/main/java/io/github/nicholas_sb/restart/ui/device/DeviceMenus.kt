@@ -1,5 +1,11 @@
 package io.github.nicholas_sb.restart.ui.device
 
+import io.github.nicholas_sb.restart.data.history.MonthDetail
+import io.github.nicholas_sb.restart.data.history.MonthSummary
+import io.github.nicholas_sb.restart.data.streamedSong
+import io.github.nicholas_sb.restart.playback.STREAM_KEY_PREFIX
+import java.time.YearMonth
+import java.time.format.DateTimeFormatter
 import io.github.nicholas_sb.restart.data.TextSearch
 import io.github.nicholas_sb.restart.playback.SleepTimerCommand
 import io.github.nicholas_sb.restart.ui.SleepTimer
@@ -44,6 +50,8 @@ class DeviceMenus(
     private val startNameEntry: (page: Page.NameEntry, initialText: String) -> Unit,
     private val shufflePlaylist: (playlistId: Long) -> Unit,
     private val searchQuery: String,
+    private val months: List<MonthSummary>,
+    private val monthDetail: MonthDetail?,
     private val sleepTimer: SleepTimer?,
     private val setSleepTimer: (minutes: Int) -> Unit,
     private val backUpNow: () -> Unit,
@@ -65,6 +73,8 @@ class DeviceMenus(
         Page.Search -> "Search"
         Page.ForYou -> "For You"
         Page.Stats -> "Stats"
+        Page.History -> "History"
+        is Page.Month -> YearMonth.parse(page.month).format(monthTitle)
         Page.Download -> "Download"
         Page.PlaylistImport -> "Import Playlist"
         Page.Extras -> "Extras"
@@ -93,6 +103,8 @@ class DeviceMenus(
         Page.Search -> searchMenu()
         Page.ForYou -> forYouMenu()
         Page.Stats -> statsMenu()
+        Page.History -> historyMenu()
+        is Page.Month -> monthMenu(YearMonth.parse(page.month))
         Page.Extras -> extrasMenu()
         Page.MusicFolder -> musicFolderMenu()
         Page.NowPlayingOptions -> nowPlayingOptionsMenu()
@@ -193,6 +205,7 @@ class DeviceMenus(
             .take(10)
         val topSongs = mostPlayed.map { songsByFileName.getValue(it.songFileName) }
         return buildList {
+            add(MenuEntry("History", detail = "Your listening, month by month", opensSubmenu = true) { navigation.open(Page.History) })
             add(MenuEntry("Listening time", detail = formatListeningTime(all.sumOf { it.listenedMs })) {})
             add(MenuEntry("Plays", detail = all.sumOf { it.playCount }.toString()) {})
             add(MenuEntry("Skips", detail = all.sumOf { it.skipCount }.toString()) {})
@@ -210,6 +223,57 @@ class DeviceMenus(
                     ) { playAll(topSongs, startIndex = index) }
                 )
             }
+        }
+    }
+
+    // --- History ---
+
+    /** Every month with listening, newest first. */
+    private fun historyMenu(): List<MenuEntry> =
+        months.map { summary ->
+            val listened = if (summary.listenedMs > 0) " · ${formatListeningTime(summary.listenedMs)}" else ""
+            MenuEntry(summary.month.format(monthTitle), detail = plural(summary.plays, "play") + listened, opensSubmenu = true) {
+                navigation.open(Page.Month(summary.month.toString()))
+            }
+        }
+
+    /** One month: totals, the busiest day, then the top songs (playable) and top artists. */
+    private fun monthMenu(month: YearMonth): List<MenuEntry> {
+        val detail = monthDetail?.takeIf { it.month == month } ?: return listOf(MenuEntry("Loading…") {})
+        // The top songs as Songs: from the library, or streamed again; songs deleted since are left out.
+        val songs = detail.topSongs.map { count ->
+            if (count.key.startsWith(STREAM_KEY_PREFIX)) {
+                streamedSong(count.key.removePrefix(STREAM_KEY_PREFIX), count.title, count.artist, 0)
+            } else {
+                songsByFileName[count.key]
+            }
+        }
+        val playable = songs.filterNotNull()
+        return buildList {
+            add(MenuEntry("Plays", detail = detail.plays.toString()) {})
+            add(
+                MenuEntry(
+                    "Listening time",
+                    detail = if (detail.listenedMs > 0) formatListeningTime(detail.listenedMs) else "Not recorded for this month",
+                ) {}
+            )
+            detail.busiestDay?.let { day ->
+                add(MenuEntry("Busiest day", detail = "${day.format(dayTitle)} · ${plural(detail.busiestDayPlays, "play")}") {})
+            }
+            if (detail.topSongs.isNotEmpty()) add(MenuEntry("Top Songs") {})
+            detail.topSongs.forEachIndexed { index, count ->
+                val song = songs[index]
+                val gone = if (song == null) " · not on your phone" else ""
+                add(
+                    MenuEntry(
+                        "${index + 1}. ${count.title}",
+                        detail = listOfNotNull(count.artist, plural(count.plays, "play")).joinToString(" · ") + gone,
+                        song = song,
+                    ) { if (song != null) playAll(playable, startIndex = playable.indexOf(song)) }
+                )
+            }
+            if (detail.topArtists.isNotEmpty()) add(MenuEntry("Top Artists") {})
+            detail.topArtists.forEach { artist -> add(MenuEntry(artist.title, detail = plural(artist.plays, "play")) {}) }
         }
     }
 
@@ -582,3 +646,9 @@ class DeviceMenus(
         }
     }
 }
+
+/** "October 2026", in the phone's language. */
+private val monthTitle = DateTimeFormatter.ofPattern("MMMM yyyy")
+
+/** "Sat, Oct 17" */
+private val dayTitle = DateTimeFormatter.ofPattern("EEE, MMM d")

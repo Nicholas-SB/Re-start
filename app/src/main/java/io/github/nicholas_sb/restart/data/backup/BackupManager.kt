@@ -2,6 +2,7 @@ package io.github.nicholas_sb.restart.data.backup
 
 import android.content.Context
 import io.github.nicholas_sb.restart.data.MusicScanner
+import io.github.nicholas_sb.restart.data.db.ListeningDayEntity
 import io.github.nicholas_sb.restart.data.db.MusicDatabase
 import io.github.nicholas_sb.restart.data.db.PlayEventEntity
 import io.github.nicholas_sb.restart.data.db.PlaylistEntity
@@ -19,6 +20,7 @@ data class Backup(
     val playlists: List<Pair<PlaylistEntity, List<String>>>,
     val stats: List<SongStatsEntity>,
     val playEvents: List<PlayEventEntity>,
+    val listeningDays: List<ListeningDayEntity>,
     val settings: Map<String, Any>,  // the Extras settings: Booleans and Strings
     val musicFolder: String?,
 ) {
@@ -46,6 +48,7 @@ class BackupManager(private val context: Context) {
             playlists = dao.playlists().map { it to songsByPlaylist[it.id].orEmpty() },
             stats = dao.stats(),
             playEvents = dao.playEvents(),
+            listeningDays = dao.listeningDays(),
             // Only on/off switches and choices (all the Extras settings are one or the other).
             settings = settingsPrefs.all.filterValues { it is Boolean || it is String }.mapValues { it.value!! },
             musicFolder = MusicScanner.chosenFolder(context),
@@ -81,7 +84,18 @@ class BackupManager(private val context: Context) {
                 }
             })
             .put("plays", JSONArray().apply {
-                backup.playEvents.forEach { put(JSONObject().put("song", it.songFileName).put("at", it.playedAt)) }
+                backup.playEvents.forEach { play ->
+                    put(
+                        JSONObject().put("song", play.songFileName).put("at", play.playedAt).apply {
+                            // Streamed songs carry their name (they have no file to look it up from).
+                            play.title?.let { put("title", it) }
+                            play.artist?.let { put("artist", it) }
+                        }
+                    )
+                }
+            })
+            .put("listeningDays", JSONArray().apply {
+                backup.listeningDays.forEach { put(JSONObject().put("day", it.day).put("ms", it.listenedMs)) }
             })
             .put("settings", JSONObject(backup.settings))
             .put("musicFolder", backup.musicFolder ?: JSONObject.NULL)
@@ -115,7 +129,16 @@ class BackupManager(private val context: Context) {
             )
         }
         val plays = json.optJSONArray("plays")?.objects().orEmpty().map { play ->
-            PlayEventEntity(songFileName = play.getString("song"), playedAt = play.getLong("at"))
+            PlayEventEntity(
+                songFileName = play.getString("song"),
+                playedAt = play.getLong("at"),
+                title = play.optString("title").ifEmpty { null },
+                artist = play.optString("artist").ifEmpty { null },
+            )
+        }
+        // Not in backups from before the monthly history: then there's simply none.
+        val listeningDays = json.optJSONArray("listeningDays")?.objects().orEmpty().map { day ->
+            ListeningDayEntity(day = day.getLong("day"), listenedMs = day.getLong("ms"))
         }
         val settings = json.optJSONObject("settings")?.let { saved ->
             saved.keys().asSequence().mapNotNull { key ->
@@ -131,6 +154,7 @@ class BackupManager(private val context: Context) {
             playlists = playlists,
             stats = stats,
             playEvents = plays,
+            listeningDays = listeningDays,
             settings = settings,
             musicFolder = if (json.isNull("musicFolder")) null else json.optString("musicFolder").ifEmpty { null },
         )
@@ -138,7 +162,7 @@ class BackupManager(private val context: Context) {
 
     /** Replaces the current playlists, stats and settings with [backup]'s. */
     suspend fun restore(backup: Backup) {
-        dao.replaceAll(backup.playlists, backup.stats, backup.playEvents)
+        dao.replaceAll(backup.playlists, backup.stats, backup.playEvents, backup.listeningDays)
         val editor = settingsPrefs.edit().clear()
         backup.settings.forEach { (key, value) ->
             when (value) {

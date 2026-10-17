@@ -1,5 +1,6 @@
 package io.github.nicholas_sb.restart.ui.device
 
+import java.time.YearMonth
 import androidx.activity.result.IntentSenderRequest
 import io.github.nicholas_sb.restart.data.SongDeleter
 import androidx.lifecycle.Lifecycle
@@ -281,6 +282,14 @@ fun RestartApp(
         animate = settings.animations,
     )
 
+    // Listening history: the months, and the month that's open (loaded when its page opens).
+    val months by statsViewModel.months.collectAsStateWithLifecycle()
+    val monthDetail by statsViewModel.monthDetail.collectAsStateWithLifecycle()
+    LaunchedEffect(page) {
+        val month = (page as? Page.Month)?.month ?: return@LaunchedEffect
+        statsViewModel.loadMonth(YearMonth.parse(month)) { fileName -> songsByFileName[fileName]?.let { it.title to it.artist } }
+    }
+
     // What's typed on the Search page (kept when you leave it, so coming back shows the results).
     var searchQuery by rememberSaveable { mutableStateOf("") }
 
@@ -402,6 +411,8 @@ fun RestartApp(
         },
         shufflePlaylist = ::shufflePlaylist,
         searchQuery = searchQuery,
+        months = months,
+        monthDetail = monthDetail,
         sleepTimer = sleepTimer,
         setSleepTimer = playerViewModel::setSleepTimer,
         backUpNow = { saveBackup.launch("Re-start backup ${LocalDate.now()}.json") },

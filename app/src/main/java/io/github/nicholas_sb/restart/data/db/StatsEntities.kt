@@ -24,6 +24,22 @@ data class SongStatsEntity(
 )
 data class PlayEventEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val songFileName: String,
+    val songFileName: String,  // for streamed songs: "stream:<YouTube id>"
     val playedAt: Long,
+    // Only for streamed songs, which have no file to look the name up from. (Added in v4.)
+    val title: String? = null,
+    val artist: String? = null,
+)
+
+/** Minutes listened on one day (in ms), plays and skips alike. For "hours listened" per month. */
+@Entity(tableName = "listening_days")
+data class ListeningDayEntity(
+    @PrimaryKey val day: Long,  // days since 1970, in the phone's time zone
+    val listenedMs: Long,
+)
+
+/** Plays per month ("2026-10"), for the History page. */
+data class MonthPlays(
+    val month: String,
+    val plays: Int,
 )

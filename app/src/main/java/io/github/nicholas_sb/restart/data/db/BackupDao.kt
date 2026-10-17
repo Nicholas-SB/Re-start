@@ -21,6 +21,9 @@ interface BackupDao {
     @Query("SELECT * FROM play_events ORDER BY playedAt")
     suspend fun playEvents(): List<PlayEventEntity>
 
+    @Query("SELECT * FROM listening_days ORDER BY day")
+    suspend fun listeningDays(): List<ListeningDayEntity>
+
     @Query("DELETE FROM playlists")  // their songs go too (ON DELETE CASCADE)
     suspend fun deletePlaylists()
 
@@ -29,6 +32,9 @@ interface BackupDao {
 
     @Query("DELETE FROM play_events")
     suspend fun deletePlayEvents()
+
+    @Query("DELETE FROM listening_days")
+    suspend fun deleteListeningDays()
 
     @Insert
     suspend fun insertPlaylist(playlist: PlaylistEntity): Long
@@ -42,6 +48,9 @@ interface BackupDao {
     @Insert
     suspend fun insertPlayEvents(events: List<PlayEventEntity>)
 
+    @Insert
+    suspend fun insertListeningDays(days: List<ListeningDayEntity>)
+
     /**
      * Replaces all playlists and stats. @Transaction makes it all-or-nothing: if anything
      * fails halfway, the old data is still there.
@@ -51,15 +60,18 @@ interface BackupDao {
         playlists: List<Pair<PlaylistEntity, List<String>>>,  // each playlist with its songs' file names
         stats: List<SongStatsEntity>,
         playEvents: List<PlayEventEntity>,
+        listeningDays: List<ListeningDayEntity>,
     ) {
         deletePlaylists()
         deleteStats()
         deletePlayEvents()
+        deleteListeningDays()
         for ((playlist, songs) in playlists) {
             val id = insertPlaylist(playlist.copy(id = 0))  // new ids; the order is what matters
             insertPlaylistSongs(songs.mapIndexed { position, fileName -> PlaylistSongEntity(playlistId = id, songFileName = fileName, position = position) })
         }
         insertStats(stats)
         insertPlayEvents(playEvents.map { it.copy(id = 0) })
+        insertListeningDays(listeningDays)
     }
 }

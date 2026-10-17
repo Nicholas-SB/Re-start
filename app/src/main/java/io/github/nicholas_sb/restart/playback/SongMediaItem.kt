@@ -45,6 +45,16 @@ fun Song.toMediaItem(): MediaItem =
 val MediaItem.songFileName: String?
     get() = mediaMetadata.extras?.getString(EXTRA_FILE_NAME)
 
+/**
+ * What the listening stats call this song: its file name, or "stream:<id>" for a streamed
+ * song (which has no file).
+ */
+val MediaItem.statsKey: String?
+    get() = songFileName ?: mediaMetadata.extras?.getString(EXTRA_VIDEO_ID)?.let { "$STREAM_KEY_PREFIX$it" }
+
+/** Stats keys of streamed songs start with this. */
+const val STREAM_KEY_PREFIX = "stream:"
+
 /** For a streamed song: the Song again (it isn't in the library, so it can't be looked up). */
 fun MediaItem.toStreamedSong(): Song? {
     val videoId = mediaMetadata.extras?.getString(EXTRA_VIDEO_ID) ?: return null

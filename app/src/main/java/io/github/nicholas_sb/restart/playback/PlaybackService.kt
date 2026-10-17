@@ -1,5 +1,6 @@
 package io.github.nicholas_sb.restart.playback
 
+import java.time.LocalDate
 import android.os.Bundle
 import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionResult
@@ -238,19 +239,26 @@ class PlaybackService : MediaSessionService() {
     // `by lazy`: created the first time it's used (after onCreate), then reused.
     private val statsDao by lazy { MusicDatabase.getInstance(this).statsDao() }
 
+    // Names of the streamed songs played lately, by stats key: a play is saved after the next
+    // song has started, so the name can't be read from the player any more by then.
+    private val streamedNames = mutableMapOf<String, Pair<String?, String?>>()
+
+    private fun today(): Long = LocalDate.now().toEpochDay()
+
     private val listeningTracker = ListeningTracker(
         recorder = object : ListeningRecorder {
             override fun recordPlay(songFileName: String, listenedMs: Long) {
                 val playedAt = System.currentTimeMillis()
-                statsScope.launch { statsDao.recordPlay(songFileName, playedAt, listenedMs) }
+                val (title, artist) = streamedNames[songFileName] ?: (null to null)
+                statsScope.launch { statsDao.recordPlay(songFileName, playedAt, listenedMs, today(), title, artist) }
             }
 
             override fun recordSkip(songFileName: String, listenedMs: Long) {
-                statsScope.launch { statsDao.recordSkip(songFileName, listenedMs) }
+                statsScope.launch { statsDao.recordSkip(songFileName, listenedMs, today()) }
             }
 
             override fun recordListening(songFileName: String, listenedMs: Long) {
-                statsScope.launch { statsDao.recordListening(songFileName, listenedMs) }
+                statsScope.launch { statsDao.recordListening(songFileName, listenedMs, today()) }
             }
         },
         // elapsedRealtime: milliseconds since boot. Unlike the wall clock, it never jumps
@@ -265,7 +273,12 @@ class PlaybackService : MediaSessionService() {
             val userMovedOn = reason == Player.MEDIA_ITEM_TRANSITION_REASON_SEEK ||
                 reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED
             listeningTracker.songEnded(userSkipped = userMovedOn)
-            listeningTracker.songStarted(mediaItem?.songFileName, mediaItem?.songDurationMs ?: 0L, player.isPlaying)
+            val key = mediaItem?.statsKey
+            if (key != null && key.startsWith(STREAM_KEY_PREFIX)) {
+                if (streamedNames.size > 50) streamedNames.clear()  // only recent ones are needed
+                streamedNames[key] = mediaItem.mediaMetadata.title?.toString() to mediaItem.mediaMetadata.artist?.toString()
+            }
+            listeningTracker.songStarted(key, mediaItem?.songDurationMs ?: 0L, player.isPlaying)
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
