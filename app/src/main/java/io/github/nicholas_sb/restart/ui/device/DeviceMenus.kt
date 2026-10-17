@@ -1,5 +1,6 @@
 package io.github.nicholas_sb.restart.ui.device
 
+import io.github.nicholas_sb.restart.data.TextSearch
 import io.github.nicholas_sb.restart.playback.SleepTimerCommand
 import io.github.nicholas_sb.restart.ui.SleepTimer
 import io.github.nicholas_sb.restart.ui.formatTime
@@ -42,6 +43,7 @@ class DeviceMenus(
     private val showMessage: (String) -> Unit,
     private val startNameEntry: (page: Page.NameEntry, initialText: String) -> Unit,
     private val shufflePlaylist: (playlistId: Long) -> Unit,
+    private val searchQuery: String,
     private val sleepTimer: SleepTimer?,
     private val setSleepTimer: (minutes: Int) -> Unit,
     private val backUpNow: () -> Unit,
@@ -59,6 +61,7 @@ class DeviceMenus(
         Page.MainMenu -> "Re-start"
         Page.Music -> "Music"
         Page.Songs -> "Songs"
+        Page.Search -> "Search"
         Page.ForYou -> "For You"
         Page.Stats -> "Stats"
         Page.Download -> "Download"
@@ -85,6 +88,7 @@ class DeviceMenus(
         Page.MainMenu -> mainMenu()
         Page.Music -> musicMenu()
         Page.Songs -> songsMenu()
+        Page.Search -> searchMenu()
         Page.ForYou -> forYouMenu()
         Page.Stats -> statsMenu()
         Page.Extras -> extrasMenu()
@@ -127,6 +131,7 @@ class DeviceMenus(
     }
 
     private fun musicMenu() = listOf(
+        MenuEntry("Search", detail = "Songs, artists, albums, playlists", opensSubmenu = true) { navigation.open(Page.Search) },
         MenuEntry("Shuffle Songs") { playAll(songs, shuffle = true) },
         MenuEntry("Songs", detail = plural(songs.size, "song"), opensSubmenu = true) { navigation.open(Page.Songs) },
         MenuEntry("Playlists", detail = plural(playlists.size, "playlist"), opensSubmenu = true) { navigation.open(Page.Playlists) },
@@ -141,6 +146,20 @@ class DeviceMenus(
         }
         return listOf(MenuEntry("Sort", detail = settings.songSort.label) { settings.cycleSongSort() }) +
             songListMenu(sorted)
+    }
+
+    /** Playlists whose name matches first, then the matching songs (choosing one plays the results from there). */
+    private fun searchMenu(): List<MenuEntry> {
+        val words = TextSearch.words(searchQuery)
+        if (words.isEmpty()) return emptyList()
+        val playlistRows = playlists
+            .filter { TextSearch.matches(words, it.name) }
+            .map { playlist ->
+                MenuEntry(playlist.name, detail = "Playlist · ${plural(playlist.songCount, "song")}", opensSubmenu = true) {
+                    navigation.open(Page.Playlist(playlist.id))
+                }
+            }
+        return playlistRows + songListMenu(TextSearch.songs(songs, searchQuery))
     }
 
     /**

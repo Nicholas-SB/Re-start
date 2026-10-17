@@ -267,6 +267,9 @@ fun RestartApp(
 
     val sleepTimer by playerViewModel.sleepTimer.collectAsStateWithLifecycle()
 
+    // What's typed on the Search page (kept when you leave it, so coming back shows the results).
+    var searchQuery by rememberSaveable { mutableStateOf("") }
+
     // --- Backup & restore ---
     // Android's file picker (the "Storage Access Framework"): you choose where to save or what
     // to open, and the app gets a content:// address for just that file. No storage permission.
@@ -344,6 +347,7 @@ fun RestartApp(
             navigation.open(namePage)
         },
         shufflePlaylist = ::shufflePlaylist,
+        searchQuery = searchQuery,
         sleepTimer = sleepTimer,
         setSleepTimer = playerViewModel::setSleepTimer,
         backUpNow = { saveBackup.launch("Re-start backup ${LocalDate.now()}.json") },
@@ -496,6 +500,7 @@ fun RestartApp(
                                     artLoader = libraryViewModel.artLoader,
                                     emptyText = when (shownPage) {
                                         Page.Songs -> "No songs in $musicFolder.\nPick your music folder in Extras."
+                                        Page.Search -> if (searchQuery.isBlank()) "Type a song, artist, album or playlist" else "Nothing found for \"${searchQuery.trim()}\""
                                         is Page.Playlist -> "Loading…"
                                         else -> "Nothing here"
                                     },
@@ -546,6 +551,11 @@ fun RestartApp(
                                         onNameChange = { nameDraft = it },
                                         onSave = { saveName(shownPage) },
                                         onCancel = { navigation.back() },
+                                    )
+                                    Page.Search -> SearchPage(
+                                        query = searchQuery,
+                                        onQueryChange = { searchQuery = it },
+                                        results = { menuList(shownPage) },
                                     )
                                     else -> menuList(shownPage)
                                 }

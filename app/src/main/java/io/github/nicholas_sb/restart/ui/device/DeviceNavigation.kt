@@ -14,6 +14,9 @@ sealed interface Page {
     data object Music : Page
     data object Songs : Page
 
+    /** Type to find songs and playlists. */
+    data object Search : Page
+
     /** New songs from YouTube Music, picked from what you play most. */
     data object ForYou : Page
     data object Stats : Page
