@@ -63,6 +63,10 @@ interface PlaylistDao {
     @Query("SELECT COALESCE(MAX(position), -1) FROM playlist_songs WHERE playlistId = :playlistId")
     suspend fun lastPosition(playlistId: Long): Int
 
+    /** Takes a song out of every playlist (it was deleted from the phone). */
+    @Query("DELETE FROM playlist_songs WHERE songFileName = :songFileName")
+    suspend fun removeSongEverywhere(songFileName: String)
+
     @Query("SELECT COUNT(*) FROM playlist_songs WHERE playlistId = :playlistId AND songFileName = :songFileName")
     suspend fun countSong(playlistId: Long, songFileName: String): Int
 

@@ -53,6 +53,9 @@ sealed interface Page {
 
     data class ConfirmDelete(val playlistId: Long) : Page
 
+    /** "Delete this song from your phone and all playlists?" */
+    data class ConfirmDeleteSong(val songId: Long) : Page
+
     /** Stop the music after a while. */
     data object SleepTimer : Page
 

@@ -175,6 +175,14 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         return if (stopsAt == SleepTimerCommand.END_OF_SONG.toLong()) SleepTimer.EndOfSong else SleepTimer.At(stopsAt)
     }
 
+    /** Takes every copy of a song out of the queue (it was deleted). Playing moves on to the next one. */
+    fun removeFromQueue(songId: Long) {
+        val player = controller ?: return
+        for (index in player.mediaItemCount - 1 downTo 0) {
+            if (player.getMediaItemAt(index).mediaId == songId.toString()) player.removeMediaItem(index)
+        }
+    }
+
     /**
      * Swaps a queued song for [song] (a mix's guessed title turned out to be this). The song
      * that's playing right now is left alone, so it doesn't restart.

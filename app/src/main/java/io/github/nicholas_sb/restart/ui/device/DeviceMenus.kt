@@ -53,6 +53,7 @@ class DeviceMenus(
     private val lastBackupAt: Long?,
     private val startMix: (song: Song) -> Unit,
     private val downloadSong: (song: Song) -> Unit,
+    private val deleteSong: (song: Song) -> Unit,
     private val forYou: ForYouState,
     private val refreshForYou: (newPicks: Boolean) -> Unit,
 ) {
@@ -79,6 +80,7 @@ class DeviceMenus(
         is Page.AddToPlaylist -> "Add to Playlist"
         is Page.NameEntry -> if (page.renamePlaylistId != null) "Rename Playlist" else "New Playlist"
         is Page.ConfirmDelete -> "Delete Playlist?"
+        is Page.ConfirmDeleteSong -> "Delete Song?"
         Page.Backup -> "Backup"
         Page.SleepTimer -> "Sleep Timer"
         Page.ConfirmRestore -> "Restore Backup?"
@@ -102,6 +104,7 @@ class DeviceMenus(
         is Page.SongOptions -> songOptionsMenu(page.songId)
         is Page.AddToPlaylist -> addToPlaylistMenu(page.songId)
         is Page.ConfirmDelete -> confirmDeleteMenu(page.playlistId)
+        is Page.ConfirmDeleteSong -> confirmDeleteSongMenu(page.songId)
         Page.Backup -> backupMenu()
         Page.SleepTimer -> sleepTimerMenu()
         Page.ConfirmRestore -> confirmRestoreMenu()
@@ -292,7 +295,7 @@ class DeviceMenus(
             } else {
                 MenuEntry("Add to Playlist…", opensSubmenu = true) { navigation.open(Page.AddToPlaylist(song.id)) }
             },
-        )
+        ) + listOfNotNull(deleteEntry(song))
     }
 
     /** The queue after the current song, in play order. Choosing one jumps there. */
@@ -391,6 +394,7 @@ class DeviceMenus(
             })
             if (song != null) {
                 add(MenuEntry("Add to Another Playlist…", opensSubmenu = true) { navigation.open(Page.AddToPlaylist(song.id)) })
+                deleteEntry(song)?.let(::add)
             }
         }
     }
@@ -405,6 +409,25 @@ class DeviceMenus(
             } else {
                 MenuEntry("Add to Playlist…", opensSubmenu = true) { navigation.open(Page.AddToPlaylist(songId)) }
             },
+        ) + listOfNotNull(deleteEntry(song))
+    }
+
+    /** "Delete Song…" for songs that are files on the phone (not streamed ones). */
+    private fun deleteEntry(song: Song): MenuEntry? =
+        if (song.isStreamed) {
+            null
+        } else {
+            MenuEntry("Delete Song…", detail = "From your phone and all playlists", opensSubmenu = true) {
+                navigation.open(Page.ConfirmDeleteSong(song.id))
+            }
+        }
+
+    /** Cancel comes first, so a stray press of the center can't delete anything. */
+    private fun confirmDeleteSongMenu(songId: Long): List<MenuEntry> {
+        val song = findSong(songId) ?: return emptyList()
+        return listOf(
+            MenuEntry("Cancel") { navigation.back() },
+            MenuEntry("Delete \"${song.title}\"", detail = "Deletes the file and takes it out of every playlist") { deleteSong(song) },
         )
     }
 

@@ -1,5 +1,7 @@
 package io.github.nicholas_sb.restart.ui.device
 
+import androidx.activity.result.IntentSenderRequest
+import io.github.nicholas_sb.restart.data.SongDeleter
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.currentStateAsState
@@ -282,6 +284,46 @@ fun RestartApp(
     // What's typed on the Search page (kept when you leave it, so coming back shows the results).
     var searchQuery by rememberSaveable { mutableStateOf("") }
 
+    // --- Deleting a song ---
+    // Songs Re-start downloaded are deleted straight away; for others Android asks first, in
+    // its own dialog, and tells us the answer through this launcher.
+    val songDeleter = remember { SongDeleter(context.applicationContext) }
+    var songBeingDeleted by remember { mutableStateOf<Song?>(null) }
+
+    fun finishDeleting(song: Song) {
+        scope.launch {
+            songDeleter.cleanUp(song)
+            playerViewModel.removeFromQueue(song.id)
+            libraryViewModel.rescan()
+            showMessage("Deleted ${song.title}")
+        }
+    }
+    val askToDelete = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
+        val song = songBeingDeleted ?: return@rememberLauncherForActivityResult
+        songBeingDeleted = null
+        if (result.resultCode == Activity.RESULT_OK) finishDeleting(song) else showMessage("Not deleted")
+    }
+    fun deleteSong(song: Song) {
+        // Back to the list the song was in (past the confirm page and the song's options).
+        navigation.back()
+        navigation.back()
+        scope.launch {
+            try {
+                val askFirst = songDeleter.delete(song)
+                if (askFirst == null) {
+                    finishDeleting(song)
+                } else {
+                    songBeingDeleted = song
+                    askToDelete.launch(IntentSenderRequest.Builder(askFirst).build())
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                showMessage("Couldn't delete ${song.title}")
+            }
+        }
+    }
+
     // --- Backup & restore ---
     // Android's file picker (the "Storage Access Framework"): you choose where to save or what
     // to open, and the app gets a content:// address for just that file. No storage permission.
@@ -370,6 +412,7 @@ fun RestartApp(
         lastBackupAt = lastBackupAt.takeIf { it > 0 },
         startMix = ::startMix,
         downloadSong = ::downloadSong,
+        deleteSong = ::deleteSong,
         forYou = forYou,
         refreshForYou = { newPicks -> discoverViewModel.load(songs, stats, newPicks) },
     )
