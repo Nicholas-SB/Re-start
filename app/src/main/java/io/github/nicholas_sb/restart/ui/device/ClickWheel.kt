@@ -1,5 +1,15 @@
 package io.github.nicholas_sb.restart.ui.device
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.draw.scale
 import android.os.SystemClock
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -72,6 +82,20 @@ fun ClickWheel(
     val playPause by rememberUpdatedState(onPlayPause)
     val scan by rememberUpdatedState(onScan)
 
+    // Which ring button is held down right now, so its label can dip a little.
+    var pressedButton by remember { mutableStateOf<RingButton?>(null) }
+    fun labelScale(button: RingButton): Float = if (pressedButton == button) 0.82f else 1f
+    val menuScale by animateFloatAsState(labelScale(RingButton.MENU), motionSpec(90), label = "press")
+    val previousScale by animateFloatAsState(labelScale(RingButton.PREVIOUS), motionSpec(90), label = "press")
+    val nextScale by animateFloatAsState(labelScale(RingButton.NEXT), motionSpec(90), label = "press")
+    val playScale by animateFloatAsState(labelScale(RingButton.PLAY_PAUSE), motionSpec(90), label = "press")
+
+    // The center button sinks a little while it's held. An interaction source reports
+    // presses on a clickable; collectIsPressedAsState turns that into a Boolean we can read.
+    val centerInteraction = remember { MutableInteractionSource() }
+    val centerPressed by centerInteraction.collectIsPressedAsState()
+    val centerScale by animateFloatAsState(if (centerPressed) 0.95f else 1f, motionSpec(90), label = "press")
+
     Box(
         modifier = modifier
             .aspectRatio(1f)
@@ -97,6 +121,16 @@ fun ClickWheel(
                         }
                     },
                 )
+            }
+            // Only watches (never consumes): which ring button the finger is on, for the dip.
+            // A turn of the wheel counts as letting go (waitForUpOrCancellation returns early).
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    pressedButton = ringButtonAt(down.position.x, down.position.y, size)
+                    waitForUpOrCancellation()
+                    pressedButton = null
+                }
             }
             // Pressing a button on the ring. onPress runs when the finger goes down; inside it,
             // tryAwaitRelease() waits for the finger to lift (true) or the touch to turn into a
@@ -149,17 +183,17 @@ fun ClickWheel(
             fontSize = 15.sp,
             fontWeight = FontWeight.Bold,
             letterSpacing = 2.sp,
-            modifier = Modifier.align(Alignment.TopCenter).padding(top = 22.dp),
+            modifier = Modifier.align(Alignment.TopCenter).padding(top = 22.dp).scale(menuScale),
         )
         Icon(
             painterResource(R.drawable.ic_skip_previous), contentDescription = "Previous", tint = labelColor,
-            modifier = Modifier.align(Alignment.CenterStart).padding(start = 20.dp).size(28.dp),
+            modifier = Modifier.align(Alignment.CenterStart).padding(start = 20.dp).size(28.dp).scale(previousScale),
         )
         Icon(
             painterResource(R.drawable.ic_skip_next), contentDescription = "Next", tint = labelColor,
-            modifier = Modifier.align(Alignment.CenterEnd).padding(end = 20.dp).size(28.dp),
+            modifier = Modifier.align(Alignment.CenterEnd).padding(end = 20.dp).size(28.dp).scale(nextScale),
         )
-        Row(modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 20.dp)) {
+        Row(modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 20.dp).scale(playScale)) {
             Icon(painterResource(R.drawable.ic_play), contentDescription = "Play or pause", tint = labelColor, modifier = Modifier.size(22.dp))
             Icon(painterResource(R.drawable.ic_pause), contentDescription = null, tint = labelColor, modifier = Modifier.size(22.dp))
         }
@@ -169,11 +203,14 @@ fun ClickWheel(
             modifier = Modifier
                 .align(Alignment.Center)
                 .fillMaxSize(CENTER_FRACTION)
+                .scale(centerScale)
                 .shadow(elevation = 2.dp, shape = CircleShape)
                 .clip(CircleShape)
                 .background(Brush.verticalGradient(listOf(DeviceColors.CenterTop, DeviceColors.CenterBottom)))
                 .border(1.dp, DeviceColors.WheelEdge, CircleShape)
                 .combinedClickable(
+                    interactionSource = centerInteraction,
+                    indication = LocalIndication.current,  // the usual ripple
                     onClick = {
                         feedback.press(view)
                         onCenter()

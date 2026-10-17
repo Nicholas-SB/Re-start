@@ -1,5 +1,14 @@
 package io.github.nicholas_sb.restart.ui.device
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.ui.unit.IntOffset
 import android.Manifest
 import android.app.Activity
 import android.content.pm.PackageManager
@@ -352,7 +361,7 @@ fun RestartApp(
     val keyboardOpen = WindowInsets.ime.getBottom(LocalDensity.current) > 0
 
     Box(modifier = Modifier.fillMaxSize()) {
-        DeviceTheme {
+        DeviceTheme(animations = settings.animations) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -396,56 +405,82 @@ fun RestartApp(
                         AudioPermissionGate(modifier = Modifier.fillMaxSize()) {
                             LaunchedEffect(Unit) { libraryViewModel.loadSongsOnce() }
 
+                            // Each page's rows as last shown, so a page that's sliding away keeps them
+                            // (a playlist's songs are only loaded for the page that's open).
+                            val lastEntries = remember { mutableMapOf<Page, List<MenuEntry>>() }
+                            lastEntries[page] = entries
+
                             // The list shown by menu pages. A composable lambda: a piece of UI kept in
                             // a variable, so it can be placed wherever a page needs it.
-                            val menuList: @Composable () -> Unit = {
+                            val menuList: @Composable (Page) -> Unit = { shownPage ->
+                                val shownEntries = lastEntries[shownPage].orEmpty()
                                 MenuPage(
-                                    entries = entries,
-                                    selectedIndex = navigation.selectedIndex(page).coerceAtMost(entries.lastIndex.coerceAtLeast(0)),
+                                    entries = shownEntries,
+                                    selectedIndex = navigation.selectedIndex(shownPage).coerceAtMost(shownEntries.lastIndex.coerceAtLeast(0)),
                                     onTap = { index ->
-                                        navigation.select(page, index)
-                                        entries[index].onSelect()
+                                        navigation.select(shownPage, index)
+                                        shownEntries[index].onSelect()
                                     },
                                     onLongTap = { index ->
-                                        navigation.select(page, index)
-                                        entries[index].onLongPress?.invoke()
+                                        navigation.select(shownPage, index)
+                                        shownEntries[index].onLongPress?.invoke()
                                     },
                                     artLoader = libraryViewModel.artLoader,
-                                    emptyText = when (page) {
-                                        Page.Songs -> "No songs in $musicFolder.\nPick your music folder in Settings."
+                                    emptyText = when (shownPage) {
+                                        Page.Songs -> "No songs in $musicFolder.\nPick your music folder in Extras."
                                         is Page.Playlist -> "Loading…"
                                         else -> "Nothing here"
                                     },
                                 )
                             }
 
-                            when (page) {
-                                Page.NowPlaying -> DeviceNowPlaying(
-                                    song = currentSong,
-                                    state = playerState,
-                                    positionMs = positionMs,
-                                    artLoader = libraryViewModel.artLoader,
-                                    lyricsLoader = libraryViewModel.lyricsLoader,
-                                    showLyrics = showLyrics,
-                                    volumeFraction = volumeFraction,
-                                    onSeek = playerViewModel::seekTo,
-                                )
-                                Page.Download -> DownloadScreen(
-                                    viewModel = downloadViewModel,
-                                    showTitle = false,
-                                    onOpenPlaylistImport = { navigation.open(Page.PlaylistImport) },
-                                )
-                                Page.PlaylistImport -> PlaylistImportScreen(
-                                    viewModel = downloadViewModel,
-                                    playlists = playlists.map { PlaylistChoice(it.id, it.name) },
-                                )
-                                is Page.NameEntry -> NameEntryPage(
-                                    name = nameDraft,
-                                    onNameChange = { nameDraft = it },
-                                    onSave = { saveName(page) },
-                                    onCancel = { navigation.back() },
-                                )
-                                else -> menuList()
+                            // Opening a page slides it in from the right; MENU slides back to the left.
+                            // AnimatedContent keeps the old page on screen until its exit animation ends.
+                            val slide = motionSpec<IntOffset>()
+                            val animate = settings.animations
+                            AnimatedContent(
+                                targetState = ShownPage(page, navigation.depth),
+                                contentKey = { it.page },
+                                transitionSpec = {
+                                    if (!animate) {
+                                        EnterTransition.None togetherWith ExitTransition.None
+                                    } else {
+                                        val direction = if (targetState.depth >= initialState.depth) 1 else -1
+                                        slideInHorizontally(slide) { width -> direction * width } togetherWith
+                                            slideOutHorizontally(slide) { width -> -direction * width }
+                                    }
+                                },
+                                label = "page",
+                            ) { (shownPage, _) ->
+                                when (shownPage) {
+                                    Page.NowPlaying -> DeviceNowPlaying(
+                                        song = currentSong,
+                                        state = playerState,
+                                        positionMs = positionMs,
+                                        artLoader = libraryViewModel.artLoader,
+                                        lyricsLoader = libraryViewModel.lyricsLoader,
+                                        showLyrics = showLyrics,
+                                        volumeFraction = volumeFraction,
+                                        coverStyle = settings.coverStyle,
+                                        onSeek = playerViewModel::seekTo,
+                                    )
+                                    Page.Download -> DownloadScreen(
+                                        viewModel = downloadViewModel,
+                                        showTitle = false,
+                                        onOpenPlaylistImport = { navigation.open(Page.PlaylistImport) },
+                                    )
+                                    Page.PlaylistImport -> PlaylistImportScreen(
+                                        viewModel = downloadViewModel,
+                                        playlists = playlists.map { PlaylistChoice(it.id, it.name) },
+                                    )
+                                    is Page.NameEntry -> NameEntryPage(
+                                        name = nameDraft,
+                                        onNameChange = { nameDraft = it },
+                                        onSave = { saveName(shownPage) },
+                                        onCancel = { navigation.back() },
+                                    )
+                                    else -> menuList(shownPage)
+                                }
                             }
                         }
                         MessageBubble(message, Modifier.align(Alignment.BottomCenter))
@@ -473,20 +508,33 @@ fun RestartApp(
     }
 }
 
-/** A small mocha pill with a short confirmation, e.g. "Added to Chill". */
+/** The page on screen, and how deep it is in the menus (to know which way to slide). */
+private data class ShownPage(val page: Page, val depth: Int)
+
+/** A small mocha pill with a short confirmation, e.g. "Added to Chill". Fades in and out. */
 @Composable
 private fun MessageBubble(text: String?, modifier: Modifier = Modifier) {
-    if (text == null) return
-    Text(
-        text,
-        color = DeviceColors.Screen,
-        fontSize = 14.sp,
-        modifier = modifier
-            .padding(12.dp)
-            .clip(RoundedCornerShape(50))
-            .background(DeviceColors.ScreenFrame)
-            .padding(horizontal = 14.dp, vertical = 6.dp),
-    )
+    val fade = motionSpec<Float>()
+    // AnimatedContent keeps showing the old text while it fades out, even after it's null.
+    AnimatedContent(
+        targetState = text,
+        transitionSpec = { fadeIn(fade) togetherWith fadeOut(fade) },
+        modifier = modifier,
+        label = "message",
+    ) { shown ->
+        if (shown != null) {
+            Text(
+                shown,
+                color = DeviceColors.Screen,
+                fontSize = 14.sp,
+                modifier = Modifier
+                    .padding(12.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(DeviceColors.ScreenFrame)
+                    .padding(horizontal = 14.dp, vertical = 6.dp),
+            )
+        }
+    }
 }
 
 /**

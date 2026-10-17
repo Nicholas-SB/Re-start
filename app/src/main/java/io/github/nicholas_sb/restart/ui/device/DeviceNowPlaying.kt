@@ -1,5 +1,21 @@
 package io.github.nicholas_sb.restart.ui.device
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import android.content.Context
 import android.graphics.Bitmap
 import android.media.AudioManager
@@ -65,6 +81,7 @@ fun DeviceNowPlaying(
     lyricsLoader: LyricsLoader,
     showLyrics: Boolean,
     volumeFraction: Float?,  // not null while the volume bar should show
+    coverStyle: CoverStyle,
     onSeek: (Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -122,6 +139,8 @@ fun DeviceNowPlaying(
                 SongInfo(
                     song = song,
                     artLoader = artLoader,
+                    coverStyle = coverStyle,
+                    isPlaying = state.isPlaying,
                     note = if (showLyrics && lyricsState == LyricsState.NotFound) "No lyrics for this song" else null,
                     modifier = Modifier.weight(1f),
                 )
@@ -138,28 +157,55 @@ fun DeviceNowPlaying(
 }
 
 /**
- * The cover as the star of the page: the biggest square that fits, with a soft shadow,
- * and the song centered underneath.
+ * The cover as the star of the page (a spinning disc, or the plain square), with the song
+ * centered underneath. When the song changes, the new one fades in over the old one.
  */
 @Composable
-private fun SongInfo(song: Song, artLoader: AlbumArtLoader, note: String?, modifier: Modifier = Modifier) {
-    Column(modifier = modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+private fun SongInfo(
+    song: Song,
+    artLoader: AlbumArtLoader,
+    coverStyle: CoverStyle,
+    isPlaying: Boolean,
+    note: String?,
+    modifier: Modifier = Modifier,
+) {
+    // Shared by the old and new song's disc, so a new song doesn't make the disc jump.
+    val discAngle = rememberDiscAngle(spinning = isPlaying && coverStyle == CoverStyle.DISC)
+    val fade = motionSpec<Float>(300)
+    AnimatedContent(
+        targetState = song,
+        contentKey = { it.id },
+        transitionSpec = { fadeIn(fade) togetherWith fadeOut(fade) },
+        modifier = modifier.fillMaxWidth(),
+        label = "song",
+    ) { shownSong ->
+        SongDetails(shownSong, artLoader, coverStyle, discAngle, note)
+    }
+}
+
+@Composable
+private fun SongDetails(song: Song, artLoader: AlbumArtLoader, coverStyle: CoverStyle, discAngle: () -> Float, note: String?) {
+    Column(modifier = Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
             modifier = Modifier.weight(1f).fillMaxWidth().padding(bottom = 8.dp),
             contentAlignment = Alignment.Center,
         ) {
-            val shape = RoundedCornerShape(10.dp)
-            SongArt(
-                song = song,
-                artLoader = artLoader,
-                sizePx = AlbumArtLoader.LARGE_SIZE_PX,
-                cornerRadius = 10.dp,
-                // matchHeightConstraintsFirst: try "as tall as the space allows" first, so the
-                // square never overflows; if that's too wide, it uses the width instead.
-                modifier = Modifier
-                    .aspectRatio(1f, matchHeightConstraintsFirst = true)
-                    .shadow(elevation = 10.dp, shape = shape),
-            )
+            // matchHeightConstraintsFirst: try "as tall as the space allows" first, so the
+            // square never overflows; if that's too wide, it uses the width instead.
+            val coverModifier = Modifier.aspectRatio(1f, matchHeightConstraintsFirst = true)
+            when (coverStyle) {
+                CoverStyle.DISC -> Disc(song, artLoader, discAngle, coverModifier)
+                CoverStyle.SQUARE -> {
+                    val shape = RoundedCornerShape(10.dp)
+                    SongArt(
+                        song = song,
+                        artLoader = artLoader,
+                        sizePx = AlbumArtLoader.LARGE_SIZE_PX,
+                        cornerRadius = 10.dp,
+                        modifier = coverModifier.shadow(elevation = 10.dp, shape = shape),
+                    )
+                }
+            }
         }
         Text(
             song.title,
@@ -182,6 +228,94 @@ private fun SongInfo(song: Song, artLoader: AlbumArtLoader, note: String?, modif
         )
         if (note != null) {
             Text(note, color = DeviceColors.TextSoft, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
+        }
+    }
+}
+
+/** One full turn of the disc takes this long (a lazy record-player pace). */
+private const val DISC_TURN_MS = 9_000
+
+/**
+ * The disc's angle, which keeps turning while [spinning]. Pausing lets it coast to a stop,
+ * and playing again speeds it back up, like a real turntable. With animations off it doesn't
+ * move at all.
+ *
+ * Returns a function rather than the number: whoever draws reads it only in the drawing
+ * phase (graphicsLayer), so the 60 updates a second redraw the disc without recomposing.
+ */
+@Composable
+private fun rememberDiscAngle(spinning: Boolean): () -> Float {
+    val animate = LocalAnimations.current
+    val angle = remember { Animatable(0f) }
+    LaunchedEffect(spinning, animate) {
+        if (!animate) return@LaunchedEffect
+        // The speed while spinning, in degrees per millisecond.
+        val speed = 360f / DISC_TURN_MS
+        if (spinning) {
+            // Speed up over 0.6 s. Starting from rest and accelerating evenly to `speed`
+            // covers half the distance full speed would: speed * 600 / 2.
+            angle.animateTo(angle.value + speed * 300, tween(600, easing = FastOutLinearInEasing))
+            while (true) {
+                angle.animateTo(angle.value + 360f, tween(DISC_TURN_MS, easing = LinearEasing))
+                angle.snapTo(angle.value % 360f)  // keep the number small; looks the same
+            }
+        } else {
+            // Coast to a stop over 0.8 s (again half of what full speed would cover).
+            angle.animateTo(angle.value + speed * 400, tween(800, easing = LinearOutSlowInEasing))
+        }
+    }
+    return { angle.value }
+}
+
+/**
+ * The cover as a record: round, with faint grooves, a still reflection of light, and a
+ * spindle hole in the middle. Only the picture turns; the grooves are circles (they look the
+ * same at any angle) and the reflection stays put, which is what makes it look like it spins.
+ */
+@Composable
+private fun Disc(song: Song, artLoader: AlbumArtLoader, angle: () -> Float, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .shadow(elevation = 12.dp, shape = CircleShape)
+            .clip(CircleShape)
+            .background(DeviceColors.Disc),
+    ) {
+        SongArt(
+            song = song,
+            artLoader = artLoader,
+            sizePx = AlbumArtLoader.LARGE_SIZE_PX,
+            cornerRadius = 0.dp,
+            modifier = Modifier.fillMaxSize().graphicsLayer { rotationZ = angle() },
+        )
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val radius = size.minDimension / 2
+            // Grooves: thin dark rings over the outer part of the picture.
+            for (ring in 0 until 12) {
+                drawCircle(
+                    color = Color.Black.copy(alpha = 0.07f),
+                    radius = radius * (0.42f + ring * 0.048f),
+                    style = Stroke(width = 1.dp.toPx()),
+                )
+            }
+            // Light catching the vinyl: two soft bright wedges that don't turn with the disc.
+            drawCircle(
+                Brush.sweepGradient(
+                    0.00f to Color.Transparent,
+                    0.10f to Color.White.copy(alpha = 0.16f),
+                    0.20f to Color.Transparent,
+                    0.55f to Color.Transparent,
+                    0.62f to Color.White.copy(alpha = 0.10f),
+                    0.72f to Color.Transparent,
+                    1.00f to Color.Transparent,
+                ),
+                radius = radius,
+            )
+            // The center: a dark ring around the spindle hole, which shows the screen behind.
+            drawCircle(DeviceColors.Disc, radius = radius * 0.12f)
+            drawCircle(Color.White.copy(alpha = 0.12f), radius = radius * 0.12f, style = Stroke(width = 1.dp.toPx()))
+            drawCircle(DeviceColors.Screen, radius = radius * 0.035f)
+            // The rim.
+            drawCircle(Color.Black.copy(alpha = 0.35f), radius = radius - 1.dp.toPx(), style = Stroke(width = 2.dp.toPx()))
         }
     }
 }

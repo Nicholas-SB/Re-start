@@ -1,5 +1,6 @@
 package io.github.nicholas_sb.restart.ui.device
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
@@ -19,6 +20,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -120,17 +122,22 @@ fun MenuPage(
         return
     }
 
-    val listState = rememberLazyListState()
-    // Keep the highlighted row on screen as the wheel moves it.
+    // Start with the highlighted row in view (coming back to a long list doesn't jump).
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = (selectedIndex - 3).coerceAtLeast(0))
+    val animate = LocalAnimations.current
+    // Keep the highlighted row on screen as the wheel moves it: gliding, or jumping if
+    // animations are off. (A new turn cancels a glide that's still going and starts another.)
     LaunchedEffect(selectedIndex) {
         val visible = listState.layoutInfo.visibleItemsInfo
         if (visible.isEmpty()) return@LaunchedEffect
         val firstFullyVisible = visible.first().index
         val lastFullyVisible = visible.last().index - 1  // the last row is often cut off
-        when {
-            selectedIndex < firstFullyVisible -> listState.scrollToItem(selectedIndex)
-            selectedIndex > lastFullyVisible -> listState.scrollToItem((selectedIndex - (visible.size - 2)).coerceAtLeast(0))
+        val target = when {
+            selectedIndex < firstFullyVisible -> selectedIndex
+            selectedIndex > lastFullyVisible -> (selectedIndex - (visible.size - 2)).coerceAtLeast(0)
+            else -> return@LaunchedEffect
         }
+        if (animate) listState.animateScrollToItem(target) else listState.scrollToItem(target)
     }
 
     LazyColumn(state = listState, modifier = modifier.fillMaxSize()) {
@@ -154,11 +161,10 @@ private fun MenuRow(
     onLongClick: () -> Unit,
     artLoader: AlbumArtLoader,
 ) {
-    val background = if (isSelected) {
-        Brush.verticalGradient(listOf(DeviceColors.Highlight, DeviceColors.HighlightDark))
-    } else {
-        Brush.verticalGradient(listOf(DeviceColors.Screen, DeviceColors.Screen))
-    }
+    // The highlight fades in on the new row as it fades out on the old one, so it seems to glide.
+    val top by animateColorAsState(if (isSelected) DeviceColors.Highlight else DeviceColors.Screen, motionSpec(120), label = "highlight")
+    val bottom by animateColorAsState(if (isSelected) DeviceColors.HighlightDark else DeviceColors.Screen, motionSpec(120), label = "highlight")
+    val background = Brush.verticalGradient(listOf(top, bottom))
     Row(
         modifier = Modifier
             .fillMaxWidth()

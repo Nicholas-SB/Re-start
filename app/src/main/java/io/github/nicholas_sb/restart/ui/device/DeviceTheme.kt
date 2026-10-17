@@ -3,6 +3,7 @@ package io.github.nicholas_sb.restart.ui.device
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.Color
 
 /**
@@ -22,6 +23,7 @@ object DeviceColors {
     val TextSoft = Color(0xFF8C7767)       // light mocha, for secondary text
     val Highlight = Color(0xFFA7BBA1)      // muted sage, the selection bar
     val HighlightDark = Color(0xFF7F9879)  // deeper sage, for progress bars
+    val Disc = Color(0xFF221B17)           // the record under the cover, almost black mocha
 
     // The click wheel.
     val WheelTop = Color(0xFFFBF7F0)
@@ -58,7 +60,10 @@ private val ScreenColorScheme = lightColorScheme(
     outline = DeviceColors.TextSoft,
 )
 
+/** The screen's colors, and whether things animate ([animations], see LocalAnimations). */
 @Composable
-fun DeviceTheme(content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = ScreenColorScheme, content = content)
+fun DeviceTheme(animations: Boolean, content: @Composable () -> Unit) {
+    CompositionLocalProvider(LocalAnimations provides animations) {
+        MaterialTheme(colorScheme = ScreenColorScheme, content = content)
+    }
 }

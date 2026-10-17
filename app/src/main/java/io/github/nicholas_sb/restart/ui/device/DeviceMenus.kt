@@ -180,6 +180,13 @@ class DeviceMenus(
         MenuEntry("Download", opensSubmenu = true) { navigation.open(Page.Download) },
         MenuEntry("Stats", opensSubmenu = true) { navigation.open(Page.Stats) },
         MenuEntry("Music folder", detail = musicFolder, opensSubmenu = true) { navigation.open(Page.MusicFolder) },
+        MenuEntry("Animations", detail = if (settings.animations) "On · slides, fades and a spinning disc" else "Off") {
+            settings.toggleAnimations()
+        },
+        MenuEntry("Cover style", detail = when (settings.coverStyle) {
+            CoverStyle.DISC -> "Disc · a record that spins while playing"
+            CoverStyle.SQUARE -> "Square"
+        }) { settings.cycleCoverStyle() },
         MenuEntry("Clicker", detail = if (settings.clickSound) "On · click sound for every wheel step" else "Off") {
             settings.toggleClickSound()
         },

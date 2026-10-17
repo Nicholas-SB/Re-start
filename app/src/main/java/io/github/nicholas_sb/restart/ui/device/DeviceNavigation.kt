@@ -66,6 +66,9 @@ class DeviceNavigationViewModel : ViewModel() {
     val currentPage: Page get() = stack.last()
     val canGoBack: Boolean get() = stack.size > 1
 
+    /** How many pages deep we are (the main menu is 1). Deeper = slide in from the right. */
+    val depth: Int get() = stack.size
+
     fun open(page: Page) {
         stack.remove(page)  // never have the same page twice in the stack
         stack.add(page)

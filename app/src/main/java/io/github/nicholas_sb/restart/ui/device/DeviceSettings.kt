@@ -30,6 +30,13 @@ enum class SongSort(val label: String) {
     fun next(): SongSort = entries[(ordinal + 1) % entries.size]
 }
 
+/** How Now Playing shows the cover: a spinning record, or the plain square. */
+enum class CoverStyle(val label: String) {
+    DISC("Disc"), SQUARE("Square");
+
+    fun next(): CoverStyle = entries[(ordinal + 1) % entries.size]
+}
+
 /**
  * The player's settings, saved in SharedPreferences (a small key-value file the app keeps)
  * so they survive closing the app.
@@ -57,6 +64,12 @@ class DeviceSettings(context: Context) {
      * the main processor; then the switch can't do anything.
      */
     val batterySaverSupported: Boolean = offloadSupported(context)
+    var animations by mutableStateOf(prefs.getBoolean(KEY_ANIMATIONS, true))
+        private set
+    var coverStyle by mutableStateOf(
+        CoverStyle.entries.firstOrNull { it.name == prefs.getString(KEY_COVER_STYLE, null) } ?: CoverStyle.DISC
+    )
+        private set
     var songSort by mutableStateOf(
         SongSort.entries.firstOrNull { it.name == prefs.getString(KEY_SONG_SORT, null) } ?: SongSort.A_TO_Z
     )
@@ -80,6 +93,16 @@ class DeviceSettings(context: Context) {
     fun toggleBatterySaver() {
         batterySaver = !batterySaver
         prefs.edit().putBoolean(KEY_AUDIO_OFFLOAD, batterySaver).apply()  // PlaybackService reads this
+    }
+
+    fun toggleAnimations() {
+        animations = !animations
+        prefs.edit().putBoolean(KEY_ANIMATIONS, animations).apply()
+    }
+
+    fun cycleCoverStyle() {
+        coverStyle = coverStyle.next()
+        prefs.edit().putString(KEY_COVER_STYLE, coverStyle.name).apply()
     }
 
     fun cycleSongSort() {
@@ -120,6 +143,8 @@ class DeviceSettings(context: Context) {
         const val KEY_OLD_VIBRATION = "vibration"
         const val KEY_VIBRATION_LEVEL = "vibration_level"
         const val KEY_SONG_SORT = "song_sort"
+        const val KEY_ANIMATIONS = "animations"
+        const val KEY_COVER_STYLE = "cover_style"
         const val KEY_PAUSE_FOR_CALLS = "pause_for_calls"
         const val KEY_AUDIO_OFFLOAD = "audio_offload"
     }
