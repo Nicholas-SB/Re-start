@@ -265,6 +265,8 @@ fun RestartApp(
         if (page == Page.ForYou) discoverViewModel.load(songs, stats)
     }
 
+    val sleepTimer by playerViewModel.sleepTimer.collectAsStateWithLifecycle()
+
     // --- Backup & restore ---
     // Android's file picker (the "Storage Access Framework"): you choose where to save or what
     // to open, and the app gets a content:// address for just that file. No storage permission.
@@ -342,6 +344,8 @@ fun RestartApp(
             navigation.open(namePage)
         },
         shufflePlaylist = ::shufflePlaylist,
+        sleepTimer = sleepTimer,
+        setSleepTimer = playerViewModel::setSleepTimer,
         backUpNow = { saveBackup.launch("Re-start backup ${LocalDate.now()}.json") },
         // Any file type: some file managers don't label .json files as JSON.
         pickBackupFile = { openBackup.launch(arrayOf("*/*")) },
@@ -463,6 +467,7 @@ fun RestartApp(
                         isPlaying = if (currentSong != null) playerState.isPlaying else null,
                         shuffle = playerState.shuffleEnabled,
                         repeatMode = playerState.repeatMode,
+                        sleepTimerOn = sleepTimer != null,
                     )
                     Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                         AudioPermissionGate(modifier = Modifier.fillMaxSize()) {

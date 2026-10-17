@@ -60,6 +60,7 @@ fun DeviceHeader(
     isPlaying: Boolean?,  // null = nothing loaded, so no icons
     shuffle: Boolean,
     repeatMode: RepeatMode,
+    sleepTimerOn: Boolean,
     modifier: Modifier = Modifier,
 ) {
     Box(
@@ -81,6 +82,7 @@ fun DeviceHeader(
                     RepeatMode.ALL -> StatusIcon(R.drawable.ic_repeat, "Repeat all")
                     RepeatMode.ONE -> StatusIcon(R.drawable.ic_repeat_one, "Repeat one")
                 }
+                if (sleepTimerOn) StatusIcon(R.drawable.ic_sleep, "Sleep timer on")
             }
         }
         Text(

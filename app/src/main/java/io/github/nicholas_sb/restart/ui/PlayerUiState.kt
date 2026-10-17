@@ -21,6 +21,12 @@ data class PlayerUiState(
     val queuePosition: Int get() = queueSize - upNext.size
 }
 
+/** A sleep timer that's on: stops at a time, or at the end of the current song. */
+sealed interface SleepTimer {
+    data class At(val stopsAtMs: Long) : SleepTimer
+    data object EndOfSong : SleepTimer
+}
+
 /**
  * One song in the queue. [queueIndex] is its position in the player's list, used to jump to it.
  * [streamedSong] is set for streamed songs, which can't be looked up in the library by id.

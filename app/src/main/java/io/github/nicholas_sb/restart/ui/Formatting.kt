@@ -5,6 +5,10 @@ package io.github.nicholas_sb.restart.ui
 fun formatDateTime(epochMs: Long): String =
     java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT).format(java.util.Date(epochMs))
 
+/** e.g. "11:45 PM" or "23:45", as the phone shows times. */
+fun formatTime(epochMs: Long): String =
+    java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date(epochMs))
+
 fun formatDuration(ms: Long): String {
     val totalSeconds = ms / 1000
     return "%d:%02d".format(totalSeconds / 60, totalSeconds % 60)

@@ -1,5 +1,8 @@
 package io.github.nicholas_sb.restart.ui.device
 
+import io.github.nicholas_sb.restart.playback.SleepTimerCommand
+import io.github.nicholas_sb.restart.ui.SleepTimer
+import io.github.nicholas_sb.restart.ui.formatTime
 import io.github.nicholas_sb.restart.data.backup.Backup
 import io.github.nicholas_sb.restart.ui.formatDateTime
 import io.github.nicholas_sb.restart.data.Song
@@ -39,6 +42,8 @@ class DeviceMenus(
     private val showMessage: (String) -> Unit,
     private val startNameEntry: (page: Page.NameEntry, initialText: String) -> Unit,
     private val shufflePlaylist: (playlistId: Long) -> Unit,
+    private val sleepTimer: SleepTimer?,
+    private val setSleepTimer: (minutes: Int) -> Unit,
     private val backUpNow: () -> Unit,
     private val pickBackupFile: () -> Unit,
     private val pendingRestore: Backup?,
@@ -72,6 +77,7 @@ class DeviceMenus(
         is Page.NameEntry -> if (page.renamePlaylistId != null) "Rename Playlist" else "New Playlist"
         is Page.ConfirmDelete -> "Delete Playlist?"
         Page.Backup -> "Backup"
+        Page.SleepTimer -> "Sleep Timer"
         Page.ConfirmRestore -> "Restore Backup?"
     }
 
@@ -93,6 +99,7 @@ class DeviceMenus(
         is Page.AddToPlaylist -> addToPlaylistMenu(page.songId)
         is Page.ConfirmDelete -> confirmDeleteMenu(page.playlistId)
         Page.Backup -> backupMenu()
+        Page.SleepTimer -> sleepTimerMenu()
         Page.ConfirmRestore -> confirmRestoreMenu()
         // These draw their own content instead of a list.
         Page.NowPlaying, Page.Download, Page.PlaylistImport, is Page.NameEntry -> emptyList()
@@ -190,6 +197,7 @@ class DeviceMenus(
     private fun extrasMenu() = listOf(
         MenuEntry("Download", opensSubmenu = true) { navigation.open(Page.Download) },
         MenuEntry("Stats", opensSubmenu = true) { navigation.open(Page.Stats) },
+        MenuEntry("Sleep Timer", detail = sleepTimerText(), opensSubmenu = true) { navigation.open(Page.SleepTimer) },
         MenuEntry("Backup", detail = "Save or restore playlists, stats and settings", opensSubmenu = true) {
             navigation.open(Page.Backup)
         },
@@ -258,6 +266,7 @@ class DeviceMenus(
             ) { player.cycleRepeatMode() },
             MenuEntry("Up Next", detail = plural(playerState.upNext.size, "song"), opensSubmenu = true) { navigation.open(Page.UpNext) },
             MenuEntry("Start Mix", detail = "Songs that go with this one") { startMix(song) },
+            MenuEntry("Sleep Timer", detail = sleepTimerText(), opensSubmenu = true) { navigation.open(Page.SleepTimer) },
             // A streamed song has no file to put in a playlist yet: download it first.
             if (song.isStreamed) {
                 MenuEntry("Download", detail = "Streaming · save it to your library") { downloadSong(song) }
@@ -439,6 +448,38 @@ class DeviceMenus(
                 navigation.backTo(Page.Playlists)
             },
         )
+    }
+
+    // --- Sleep timer ---
+
+    private fun sleepTimerText(): String = when (val timer = sleepTimer) {
+        null -> "Off"
+        is SleepTimer.At -> "On · stops at ${formatTime(timer.stopsAtMs)}"
+        SleepTimer.EndOfSong -> "On · stops after this song"
+    }
+
+    /** Off, a few lengths, or the end of the song. The one that's set is marked. */
+    private fun sleepTimerMenu(): List<MenuEntry> {
+        fun choice(label: String, minutes: Int, isCurrent: Boolean, detail: String? = null) =
+            MenuEntry(label, detail = if (isCurrent) listOfNotNull(detail, "current").joinToString(" · ") else detail) {
+                setSleepTimer(minutes)
+                showMessage(if (minutes == 0) "Sleep timer off" else "Sleep timer: ${label.lowercase()}")
+                navigation.back()
+            }
+        val timer = sleepTimer
+        return listOf(choice("Off", 0, timer == null)) +
+            listOf(15, 30, 45, 60, 90).map { minutes ->
+                val label = if (minutes < 60) "$minutes minutes" else if (minutes == 60) "1 hour" else "1½ hours"
+                choice(label, minutes, isCurrent = false)
+            } +
+            choice(
+                "End of Song", SleepTimerCommand.END_OF_SONG, timer == SleepTimer.EndOfSong,
+                detail = "Stops when this song ends",
+            ) +
+            listOfNotNull(
+                // A timer that's counting: show when it stops.
+                (timer as? SleepTimer.At)?.let { MenuEntry("Stops at ${formatTime(it.stopsAtMs)}", detail = "Pick another time to change it") {} },
+            )
     }
 
     // --- Backup ---

@@ -1,5 +1,13 @@
 package io.github.nicholas_sb.restart.playback
 
+import android.os.Bundle
+import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionResult
+import com.google.common.util.concurrent.Futures
+import com.google.common.util.concurrent.ListenableFuture
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.PendingIntent
@@ -143,6 +151,84 @@ class PlaybackService : MediaSessionService() {
         }
     }
 
+    // --- Sleep timer ---
+    // It lives here rather than in the screen, so it keeps counting with the app swiped away.
+
+    private val sleepScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private var sleepJob: Job? = null
+
+    /** [minutes] until the music stops; 0 turns the timer off; END_OF_SONG stops after this song. */
+    private fun setSleepTimer(minutes: Int) {
+        sleepJob?.cancel()
+        player.volume = 1f  // in case a fade-out was cut short
+        // ExoPlayer can pause by itself when a song ends.
+        player.pauseAtEndOfMediaItems = minutes == SleepTimerCommand.END_OF_SONG
+        when {
+            minutes == SleepTimerCommand.END_OF_SONG -> announceSleepTimer(SleepTimerCommand.END_OF_SONG.toLong())
+            minutes > 0 -> {
+                announceSleepTimer(System.currentTimeMillis() + minutes * 60_000L)
+                sleepJob = sleepScope.launch {
+                    delay(minutes * 60_000L - SLEEP_FADE_MS)
+                    fadeOutAndPause()
+                    announceSleepTimer(null)
+                }
+            }
+            else -> announceSleepTimer(null)
+        }
+    }
+
+    /** Lowers the volume over a few seconds, pauses, then puts the volume back for next time. */
+    private suspend fun fadeOutAndPause() {
+        val steps = 30
+        for (step in 1..steps) {
+            player.volume = 1f - step.toFloat() / steps
+            delay(SLEEP_FADE_MS / steps)
+        }
+        player.pause()
+        player.volume = 1f
+    }
+
+    /** Tells every connected controller (our screen) when the music will stop; null = timer off. */
+    private fun announceSleepTimer(stopsAt: Long?) {
+        mediaSession?.setSessionExtras(Bundle().apply { if (stopsAt != null) putLong(SleepTimerCommand.KEY_STOPS_AT, stopsAt) })
+    }
+
+    /** "End of song": once the player has paused there, the timer is done. */
+    private val sleepAtEndOfSong = object : Player.Listener {
+        override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+            if (!playWhenReady && reason == Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM && player.pauseAtEndOfMediaItems) {
+                player.pauseAtEndOfMediaItems = false
+                announceSleepTimer(null)
+            }
+        }
+    }
+
+    /** Lets our own app send the sleep timer command; other apps (Bluetooth, ...) get the usual controls. */
+    private val sessionCallback = object : MediaSession.Callback {
+        override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult {
+            if (controller.packageName != packageName) return super.onConnect(session, controller)
+            val commands = MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon()
+                .add(SleepTimerCommand.command)
+                .build()
+            return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+                .setAvailableSessionCommands(commands)
+                .build()
+        }
+
+        override fun onCustomCommand(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            customCommand: SessionCommand,
+            args: Bundle,
+        ): ListenableFuture<SessionResult> {
+            if (customCommand.customAction != SleepTimerCommand.ACTION) {
+                return super.onCustomCommand(session, controller, customCommand, args)
+            }
+            setSleepTimer(args.getInt(SleepTimerCommand.KEY_MINUTES))
+            return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+        }
+    }
+
     // --- Listening stats ---
 
     // Database writes run on this scope. It's deliberately never cancelled, so the last
@@ -274,12 +360,14 @@ class PlaybackService : MediaSessionService() {
         player.addListener(reshuffleListener)
         player.addListener(statsListener)
         player.addListener(skipBrokenStreams)
+        player.addListener(sleepAtEndOfSong)
         player.addAudioOffloadListener(offloadLogger)
         applyBatterySaver()
         settingsPrefs.registerOnSharedPreferenceChangeListener(batterySaverSwitch)
 
         mediaSession = MediaSession.Builder(this, player)
             .setSessionActivity(openAppIntent())
+            .setCallback(sessionCallback)
             .build()
         watchCalls()
     }
@@ -297,6 +385,7 @@ class PlaybackService : MediaSessionService() {
     override fun onDestroy() {
         listeningTracker.songEnded(userSkipped = false)  // save the song that was playing
         stopWatchingCalls()
+        sleepScope.cancel()
         settingsPrefs.unregisterOnSharedPreferenceChangeListener(batterySaverSwitch)
         player.removeListener(reshuffleListener)
         player.removeListener(statsListener)
@@ -317,3 +406,6 @@ private const val TAG = "PlaybackService"
 
 /** Same key as DeviceSettings' "Battery saver" switch. */
 private const val KEY_AUDIO_OFFLOAD = "audio_offload"
+
+/** How long the music fades out before the sleep timer pauses it. */
+private const val SLEEP_FADE_MS = 8_000L

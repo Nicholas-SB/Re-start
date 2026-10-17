@@ -50,6 +50,9 @@ sealed interface Page {
 
     data class ConfirmDelete(val playlistId: Long) : Page
 
+    /** Stop the music after a while. */
+    data object SleepTimer : Page
+
     /** Back up playlists, stats and settings to a file, or restore them from one. */
     data object Backup : Page
 

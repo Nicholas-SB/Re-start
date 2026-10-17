@@ -1,5 +1,7 @@
 package io.github.nicholas_sb.restart.ui
 
+import android.os.Bundle
+import io.github.nicholas_sb.restart.playback.SleepTimerCommand
 import android.app.Application
 import android.content.ComponentName
 import androidx.core.content.ContextCompat
@@ -42,6 +44,10 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     // Null until the connection to the service is ready.
     private var controller: MediaController? = null
 
+    // The sleep timer, as PlaybackService reports it (null = off).
+    private val _sleepTimer = MutableStateFlow<SleepTimer?>(null)
+    val sleepTimer: StateFlow<SleepTimer?> = _sleepTimer.asStateFlow()
+
     private val listener = object : Player.Listener {
         // One callback for every kind of change; we just re-read what we show.
         override fun onEvents(player: Player, events: Player.Events) {
@@ -54,7 +60,15 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private val controllerFuture = MediaController.Builder(
         application,
         SessionToken(application, ComponentName(application, PlaybackService::class.java)),
-    ).buildAsync()
+    )
+        // The service sends news that isn't about the player itself (here: the sleep timer)
+        // as "session extras"; this listener hears when they change.
+        .setListener(object : MediaController.Listener {
+            override fun onExtrasChanged(controller: MediaController, extras: Bundle) {
+                _sleepTimer.value = sleepTimerFrom(extras)
+            }
+        })
+        .buildAsync()
 
     init {
         controllerFuture.addListener(
@@ -64,6 +78,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 controller = connected
                 // If music was already playing (app reopened), show it right away.
                 updateState(connected)
+                _sleepTimer.value = sleepTimerFrom(connected.sessionExtras)
             },
             ContextCompat.getMainExecutor(application),  // run the callback on the UI thread
         )
@@ -147,6 +162,17 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         if (player.mediaItemCount != 1 || player.getMediaItemAt(0).mediaId != first.id.toString()) return false
         player.addMediaItems(songs.map { it.toMediaItem() })
         return true
+    }
+
+    /** Stops the music in [minutes] (0 = turn the timer off, SleepTimerCommand.END_OF_SONG = after this song). */
+    fun setSleepTimer(minutes: Int) {
+        controller?.sendCustomCommand(SleepTimerCommand.command, Bundle().apply { putInt(SleepTimerCommand.KEY_MINUTES, minutes) })
+    }
+
+    private fun sleepTimerFrom(extras: Bundle): SleepTimer? {
+        if (!extras.containsKey(SleepTimerCommand.KEY_STOPS_AT)) return null
+        val stopsAt = extras.getLong(SleepTimerCommand.KEY_STOPS_AT)
+        return if (stopsAt == SleepTimerCommand.END_OF_SONG.toLong()) SleepTimer.EndOfSong else SleepTimer.At(stopsAt)
     }
 
     /** Turns shuffle on and plays [songs] starting from a random one. */
