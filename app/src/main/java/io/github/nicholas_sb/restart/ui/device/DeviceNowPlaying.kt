@@ -1,5 +1,6 @@
 package io.github.nicholas_sb.restart.ui.device
 
+import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -96,7 +97,7 @@ fun DeviceNowPlaying(
     showLyrics: Boolean,
     volumeBar: VolumeBarState,
     coverStyle: CoverStyle,
-    discAngle: () -> Float,  // from rememberDiscAngle, kept by the whole app
+    discSpin: DiscSpin,  // from rememberDiscSpin, kept by the whole app
     nextSong: Song?,  // the song after this one, to load its cover ahead of time
     onSeek: (Long) -> Unit,
     modifier: Modifier = Modifier,
@@ -173,7 +174,7 @@ fun DeviceNowPlaying(
                     queueSize = state.queueSize,
                     artLoader = artLoader,
                     coverStyle = coverStyle,
-                    discAngle = discAngle,
+                    discSpin = discSpin,
                     note = if (showLyrics && lyricsState == LyricsState.NotFound) "No lyrics for this song" else null,
                     modifier = Modifier.weight(1f),
                 )
@@ -203,7 +204,7 @@ private fun SongInfo(
     queueSize: Int,
     artLoader: AlbumArtLoader,
     coverStyle: CoverStyle,
-    discAngle: () -> Float,  // shared by the old and new song's disc, so both keep turning
+    discSpin: DiscSpin,  // shared by the old and new song's disc, so both keep turning
     note: String?,
     modifier: Modifier = Modifier,
 ) {
@@ -235,12 +236,12 @@ private fun SongInfo(
         },
         label = "song",
     ) { shown ->
-        SongDetails(shown.song, artLoader, coverStyle, discAngle, note)
+        SongDetails(shown.song, artLoader, coverStyle, discSpin, note)
     }
 }
 
 @Composable
-private fun SongDetails(song: Song, artLoader: AlbumArtLoader, coverStyle: CoverStyle, discAngle: () -> Float, note: String?) {
+private fun SongDetails(song: Song, artLoader: AlbumArtLoader, coverStyle: CoverStyle, discSpin: DiscSpin, note: String?) {
     Column(modifier = Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
             modifier = Modifier.weight(1f).fillMaxWidth().padding(bottom = 8.dp),
@@ -250,7 +251,7 @@ private fun SongDetails(song: Song, artLoader: AlbumArtLoader, coverStyle: Cover
             // square never overflows; if that's too wide, it uses the width instead.
             val coverModifier = Modifier.aspectRatio(1f, matchHeightConstraintsFirst = true)
             when (coverStyle) {
-                CoverStyle.DISC -> Disc(song, artLoader, discAngle, coverModifier)
+                CoverStyle.DISC -> Disc(song, artLoader, discSpin, coverModifier)
                 CoverStyle.SQUARE -> {
                     val shape = RoundedCornerShape(10.dp)
                     SongArt(
@@ -315,7 +316,7 @@ private const val DISC_TURN_MS = 16_000
  * phase (graphicsLayer), so the 60 updates a second redraw the disc without recomposing.
  */
 @Composable
-fun rememberDiscAngle(spinning: Boolean, animate: Boolean): () -> Float {
+fun rememberDiscSpin(spinning: Boolean, animate: Boolean): DiscSpin {
     val angle = remember { Animatable(0f) }
     LaunchedEffect(spinning, animate) {
         if (!animate) return@LaunchedEffect
@@ -342,7 +343,30 @@ fun rememberDiscAngle(spinning: Boolean, animate: Boolean): () -> Float {
             angle.animateTo(angle.value + speed * 400, tween(800, easing = LinearOutSlowInEasing))
         }
     }
-    return { angle.value }
+    return remember { DiscSpin { angle.value } }
+}
+
+/**
+ * The disc's turning, kept by the whole app (so it doesn't reset when you leave Now Playing).
+ * There's one angle that keeps going round; each song's disc is turned by how far it went
+ * since that song's disc first appeared, so every new song's disc starts out straight.
+ */
+class DiscSpin(private val currentAngle: () -> Float) {
+    // The song whose disc came last, and the angle at that moment.
+    private var songId: Long? = null
+    private var startAngle = 0f
+
+    fun angle(): Float = currentAngle()
+
+    /** The angle at which [songId]'s disc started: right now, if it's a new song. */
+    fun startAngleFor(songId: Long): Float {
+        if (songId != this.songId) {
+            this.songId = songId
+            // Read without Compose "watching" it: the caller shouldn't redraw on every turn.
+            startAngle = Snapshot.withoutReadObservation { currentAngle() }
+        }
+        return startAngle
+    }
 }
 
 /**
@@ -351,7 +375,10 @@ fun rememberDiscAngle(spinning: Boolean, animate: Boolean): () -> Float {
  * same at any angle) and the reflection stays put, which is what makes it look like it spins.
  */
 @Composable
-private fun Disc(song: Song, artLoader: AlbumArtLoader, angle: () -> Float, modifier: Modifier = Modifier) {
+private fun Disc(song: Song, artLoader: AlbumArtLoader, spin: DiscSpin, modifier: Modifier = Modifier) {
+    // Kept for as long as this disc is shown; coming back from a menu asks again and gets the
+    // same angle back (it's still the same song), so the disc carries on where it was.
+    val startAngle = remember(song.id) { spin.startAngleFor(song.id) }
     Box(
         modifier = modifier
             .shadow(elevation = 12.dp, shape = CircleShape)
@@ -363,7 +390,7 @@ private fun Disc(song: Song, artLoader: AlbumArtLoader, angle: () -> Float, modi
             artLoader = artLoader,
             sizePx = AlbumArtLoader.LARGE_SIZE_PX,
             cornerRadius = 0.dp,
-            modifier = Modifier.fillMaxSize().graphicsLayer { rotationZ = angle() },
+            modifier = Modifier.fillMaxSize().graphicsLayer { rotationZ = spin.angle() - startAngle },
         )
         Canvas(modifier = Modifier.fillMaxSize()) {
             val radius = size.minDimension / 2

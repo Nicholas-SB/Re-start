@@ -277,7 +277,7 @@ fun RestartApp(
     // while you browse other menus. It turns only while the app is on screen: leaving the app
     // (home screen, screen off) lets it coast to a stop, and coming back starts it again.
     val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
-    val discAngle = rememberDiscAngle(
+    val discSpin = rememberDiscSpin(
         spinning = playerState.isPlaying && settings.coverStyle == CoverStyle.DISC && lifecycleState.isAtLeast(Lifecycle.State.STARTED),
         animate = settings.animations,
     )
@@ -600,7 +600,7 @@ fun RestartApp(
                                         showLyrics = showLyrics,
                                         volumeBar = volumeBar,
                                         coverStyle = settings.coverStyle,
-                                        discAngle = discAngle,
+                                        discSpin = discSpin,
                                         nextSong = playerState.upNext.firstOrNull()?.let { songsById[it.songId] ?: it.streamedSong },
                                         onSeek = playerViewModel::seekTo,
                                     )
