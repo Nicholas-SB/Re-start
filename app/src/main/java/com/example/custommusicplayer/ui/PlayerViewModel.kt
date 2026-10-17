@@ -12,6 +12,7 @@ import androidx.media3.session.SessionToken
 import com.example.custommusicplayer.data.Song
 import com.example.custommusicplayer.playback.PlaybackService
 import com.example.custommusicplayer.playback.toMediaItem
+import com.example.custommusicplayer.playback.toStreamedSong
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -97,6 +98,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             },
             upNext = buildUpNext(player),
             queueSize = player.mediaItemCount,
+            currentStreamedSong = player.currentMediaItem?.toStreamedSong(),
         )
         _positionMs.value = player.currentPosition
     }
@@ -112,8 +114,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         val upNext = mutableListOf<QueueEntry>()
         var index = timeline.getNextWindowIndex(player.currentMediaItemIndex, Player.REPEAT_MODE_OFF, player.shuffleModeEnabled)
         while (index != C.INDEX_UNSET) {
-            val songId = player.getMediaItemAt(index).mediaId.toLongOrNull()
-            if (songId != null) upNext += QueueEntry(index, songId)
+            val item = player.getMediaItemAt(index)
+            val songId = item.mediaId.toLongOrNull()
+            if (songId != null) upNext += QueueEntry(index, songId, item.toStreamedSong())
             index = timeline.getNextWindowIndex(index, Player.REPEAT_MODE_OFF, player.shuffleModeEnabled)
         }
         return upNext
@@ -133,6 +136,17 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         if (songs.isEmpty()) return
         controller?.shuffleModeEnabled = false
         playQueue(songs, 0)
+    }
+
+    /**
+     * Adds [songs] after a mix's first song, if that song is still the only one in the queue
+     * (if you started something else while the mix was loading, it's left alone).
+     */
+    fun continueMix(first: Song, songs: List<Song>): Boolean {
+        val player = controller ?: return false
+        if (player.mediaItemCount != 1 || player.getMediaItemAt(0).mediaId != first.id.toString()) return false
+        player.addMediaItems(songs.map { it.toMediaItem() })
+        return true
     }
 
     /** Turns shuffle on and plays [songs] starting from a random one. */

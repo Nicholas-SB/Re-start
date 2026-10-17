@@ -19,4 +19,8 @@ data class Song(
     val filePath: String?, // full path on the device, used to find the .lrc file next to it
     val dateAddedMs: Long = 0,  // when the file arrived on the phone (for downloads: the download date)
     val folder: String = "",    // where it lives, from the storage root, e.g. "YMusic" or "Music/Re-start"
-)
+    val streamVideoId: String? = null,  // for songs streamed from YouTube Music (see StreamedSong.kt)
+) {
+    /** Played from YouTube instead of a file on the phone (songs in a mix that you don't have). */
+    val isStreamed: Boolean get() = streamVideoId != null
+}

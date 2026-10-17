@@ -3,10 +3,13 @@ package com.example.custommusicplayer.playback
 import android.os.Bundle
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import android.net.Uri
 import com.example.custommusicplayer.data.Song
+import com.example.custommusicplayer.data.streamedSong
 
 private const val EXTRA_FILE_NAME = "fileName"
 private const val EXTRA_DURATION_MS = "durationMs"
+private const val EXTRA_VIDEO_ID = "videoId"
 
 /**
  * Converts our Song into Media3's MediaItem.
@@ -25,9 +28,12 @@ fun Song.toMediaItem(): MediaItem =
                 .setTitle(title)
                 .setArtist(artist)
                 .setAlbumTitle(album)
+                // Streamed songs have no file to take the cover from; the notification loads this.
+                .setArtworkUri(streamVideoId?.let { Uri.parse("https://i.ytimg.com/vi/$it/hqdefault.jpg") })
                 .setExtras(
                     Bundle().apply {
-                        putString(EXTRA_FILE_NAME, fileName)
+                        // No file name for streamed songs: they aren't counted in the stats.
+                        if (streamVideoId == null) putString(EXTRA_FILE_NAME, fileName) else putString(EXTRA_VIDEO_ID, streamVideoId)
                         putLong(EXTRA_DURATION_MS, durationMs)
                     }
                 )
@@ -38,6 +44,17 @@ fun Song.toMediaItem(): MediaItem =
 /** The song's file name (the key for stats), read back from the extras. */
 val MediaItem.songFileName: String?
     get() = mediaMetadata.extras?.getString(EXTRA_FILE_NAME)
+
+/** For a streamed song: the Song again (it isn't in the library, so it can't be looked up). */
+fun MediaItem.toStreamedSong(): Song? {
+    val videoId = mediaMetadata.extras?.getString(EXTRA_VIDEO_ID) ?: return null
+    return streamedSong(
+        videoId = videoId,
+        title = mediaMetadata.title?.toString().orEmpty(),
+        artist = mediaMetadata.artist?.toString(),
+        durationMs = songDurationMs,
+    )
+}
 
 val MediaItem.songDurationMs: Long
     get() = mediaMetadata.extras?.getLong(EXTRA_DURATION_MS) ?: 0L

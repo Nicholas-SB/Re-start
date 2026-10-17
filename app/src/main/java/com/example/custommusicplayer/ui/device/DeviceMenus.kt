@@ -36,6 +36,7 @@ class DeviceMenus(
     private val startNameEntry: (page: Page.NameEntry, initialText: String) -> Unit,
     private val shufflePlaylist: (playlistId: Long) -> Unit,
     private val startMix: (song: Song) -> Unit,
+    private val downloadSong: (song: Song) -> Unit,
 ) {
 
     fun title(page: Page): String = when (page) {
@@ -213,13 +214,18 @@ class DeviceMenus(
             ) { player.cycleRepeatMode() },
             MenuEntry("Up Next", detail = plural(playerState.upNext.size, "song"), opensSubmenu = true) { navigation.open(Page.UpNext) },
             MenuEntry("Start Mix", detail = "Songs that go with this one") { startMix(song) },
-            MenuEntry("Add to Playlist…", opensSubmenu = true) { navigation.open(Page.AddToPlaylist(song.id)) },
+            // A streamed song has no file to put in a playlist yet: download it first.
+            if (song.isStreamed) {
+                MenuEntry("Download", detail = "Streaming · save it to your library") { downloadSong(song) }
+            } else {
+                MenuEntry("Add to Playlist…", opensSubmenu = true) { navigation.open(Page.AddToPlaylist(song.id)) }
+            },
         )
     }
 
     /** The queue after the current song, in play order. Choosing one jumps there. */
     private fun upNextMenu() = playerState.upNext.mapNotNull { entry ->
-        val song = songsById[entry.songId] ?: return@mapNotNull null
+        val song = songsById[entry.songId] ?: entry.streamedSong ?: return@mapNotNull null
         MenuEntry(song.title, detail = song.artist, song = song) {
             player.skipToQueueItem(entry.queueIndex)
             navigation.backTo(Page.NowPlaying)

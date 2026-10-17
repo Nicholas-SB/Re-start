@@ -1,0 +1,55 @@
+package com.example.custommusicplayer.data.mixes
+
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import com.example.custommusicplayer.data.Song
+import com.example.custommusicplayer.data.streamedSong
+import com.example.custommusicplayer.downloader.LibrarySong
+import com.example.custommusicplayer.downloader.YoutubeMusic
+import com.example.custommusicplayer.downloader.findInLibrary
+
+/**
+ * "Start Mix", like YouTube Music's "Start radio": the song's radio from YouTube Music.
+ * Songs you already have play from the phone; the others are streamed.
+ */
+class RadioMixMaker(private val context: Context) {
+
+    private val youtube = YoutubeMusic(context)
+
+    /** The rest of the mix after [seed]. Throws if YouTube can't be reached. */
+    suspend fun make(seed: Song, library: List<Song>): List<Song> {
+        // Without internet yt-dlp keeps retrying for minutes: don't even start.
+        check(hasInternet()) { "No internet" }
+        val videoId = seed.streamVideoId
+            ?: youtubeIdInFileName(seed.fileName)
+            ?: youtube.search(seed.title, seed.artist.takeUnless { it == "Unknown artist" })
+            ?: error("Couldn't find this song on YouTube")
+
+        val onPhone = library.map { LibrarySong(it.fileName, it.title, it.artist, it.durationMs) }
+        val byFileName = library.associateBy { it.fileName }
+        return youtube.radio(videoId, MIX_SIZE)
+            .filter { it.videoId != videoId }  // the radio starts with the song itself
+            .map { radioSong ->
+                findInLibrary(onPhone, radioSong)?.let(byFileName::get)
+                    ?: streamedSong(radioSong.videoId, radioSong.title, radioSong.artist, (radioSong.durationSec ?: 0) * 1000L)
+            }
+            .filter { it.id != seed.id }
+            .distinctBy { it.id }
+    }
+
+    private fun hasInternet(): Boolean {
+        val connectivity = context.getSystemService(ConnectivityManager::class.java)
+        val capabilities = connectivity.getNetworkCapabilities(connectivity.activeNetwork) ?: return false
+        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    }
+
+    private fun youtubeIdInFileName(fileName: String): String? = idInFileName.find(fileName)?.groupValues?.get(1)
+
+    private companion object {
+        const val MIX_SIZE = 40
+
+        /** yt-dlp names files "Title [id].m4a". */
+        val idInFileName = Regex("""\[([A-Za-z0-9_-]{11})]\.[^.]+$""")
+    }
+}

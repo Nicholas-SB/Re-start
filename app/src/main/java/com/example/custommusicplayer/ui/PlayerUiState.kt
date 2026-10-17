@@ -1,5 +1,7 @@
 package com.example.custommusicplayer.ui
 
+import com.example.custommusicplayer.data.Song
+
 /**
  * Everything the UI needs to know about playback, in one immutable object.
  * When anything changes, the ViewModel publishes a new PlayerUiState.
@@ -13,13 +15,17 @@ data class PlayerUiState(
     val repeatMode: RepeatMode = RepeatMode.OFF,
     val upNext: List<QueueEntry> = emptyList(),  // songs after the current one, in play order
     val queueSize: Int = 0,
+    val currentStreamedSong: Song? = null,  // when the current song is streamed (not in the library)
 ) {
     /** Where the current song is in the play order, counting from 1 (for "2 of 10"). */
     val queuePosition: Int get() = queueSize - upNext.size
 }
 
-/** One song in the queue. [queueIndex] is its position in the player's list, used to jump to it. */
-data class QueueEntry(val queueIndex: Int, val songId: Long)
+/**
+ * One song in the queue. [queueIndex] is its position in the player's list, used to jump to it.
+ * [streamedSong] is set for streamed songs, which can't be looked up in the library by id.
+ */
+data class QueueEntry(val queueIndex: Int, val songId: Long, val streamedSong: Song? = null)
 
 /**
  * An `enum class` works like a Java enum. We use our own instead of Media3's

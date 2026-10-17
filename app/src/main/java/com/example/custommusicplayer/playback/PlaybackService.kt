@@ -6,6 +6,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.SystemClock
 import android.telephony.PhoneStateListener
@@ -14,16 +15,23 @@ import android.telephony.TelephonyManager
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import com.example.custommusicplayer.data.STREAM_SCHEME
 import com.example.custommusicplayer.data.db.MusicDatabase
+import com.example.custommusicplayer.downloader.YoutubeMusic
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 
 /**
  * Plays the music, independently of the UI.
@@ -56,6 +64,37 @@ class PlaybackService : MediaSessionService() {
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED && player.shuffleModeEnabled) {
                 reshuffle()
+            }
+        }
+    }
+
+    // --- Streaming (songs in a mix that aren't on the phone) ---
+
+    private val youtube by lazy { YoutubeMusic(this) }
+
+    /**
+     * Turns "restart-stream://<id>" into the song's real audio link, right when ExoPlayer is
+     * about to load it (it does this on its own loading thread, so waiting here is fine).
+     */
+    @OptIn(UnstableApi::class)
+    private fun streamingDataSource() = ResolvingDataSource.Factory(DefaultDataSource.Factory(this)) { dataSpec ->
+        if (dataSpec.uri.scheme == STREAM_SCHEME) {
+            val videoId = dataSpec.uri.host.orEmpty()
+            // runBlocking: wait for the suspend function here, on this (background) thread.
+            dataSpec.withUri(Uri.parse(runBlocking { youtube.audioUrl(videoId) }))
+        } else {
+            dataSpec  // a file on the phone: nothing to do
+        }
+    }
+
+    /** A streamed song that can't play (no internet, removed from YouTube): skip to the next. */
+    private val skipBrokenStreams = object : Player.Listener {
+        override fun onPlayerError(error: PlaybackException) {
+            val current = player.currentMediaItem ?: return
+            if (current.localConfiguration?.uri?.scheme == STREAM_SCHEME && player.hasNextMediaItem()) {
+                player.seekToNextMediaItem()
+                player.prepare()
+                player.play()
             }
         }
     }
@@ -167,10 +206,12 @@ class PlaybackService : MediaSessionService() {
         player.setShuffleOrder(FisherYatesShuffleOrder(player.mediaItemCount, player.currentMediaItemIndex))
     }
 
+    @OptIn(UnstableApi::class)  // DefaultMediaSourceFactory with our own data source
     override fun onCreate() {
         super.onCreate()
 
         player = ExoPlayer.Builder(this)
+            .setMediaSourceFactory(DefaultMediaSourceFactory(streamingDataSource()))
             // Tell Android this is music, and let ExoPlayer manage "audio focus":
             // it pauses for phone calls, ducks or pauses when another app plays audio,
             // and resumes after a short interruption (like a call) ends.
@@ -188,6 +229,7 @@ class PlaybackService : MediaSessionService() {
             .build()
         player.addListener(reshuffleListener)
         player.addListener(statsListener)
+        player.addListener(skipBrokenStreams)
 
         mediaSession = MediaSession.Builder(this, player)
             .setSessionActivity(openAppIntent())

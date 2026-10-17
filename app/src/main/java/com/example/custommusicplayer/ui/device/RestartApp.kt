@@ -49,6 +49,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.custommusicplayer.data.mixes.RadioMixMaker
 import com.example.custommusicplayer.data.mixes.SongMixMaker
 import com.example.custommusicplayer.data.AppMusicLibrary
 import com.example.custommusicplayer.data.Song
@@ -62,7 +63,9 @@ import com.example.custommusicplayer.ui.PlayerViewModel
 import com.example.custommusicplayer.ui.PlaylistViewModel
 import com.example.custommusicplayer.ui.StatsViewModel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.flowOf
 
 /**
@@ -92,7 +95,8 @@ fun RestartApp(
 
     val songsById = remember(songs) { songs.associateBy { it.id } }
     val songsByFileName = remember(songs) { songs.associateBy { it.fileName } }
-    val currentSong = playerState.currentSongId?.let { songsById[it] }
+    // A streamed song (in a mix) isn't in the library; the player state carries it instead.
+    val currentSong = playerState.currentSongId?.let { songsById[it] } ?: playerState.currentStreamedSong
 
     val page = navigation.currentPage
 
@@ -202,14 +206,34 @@ fun RestartApp(
         }
     }
 
-    // "Start Mix" on a song: songs that go with it, from your library, played in that order.
-    val mixMaker = remember { SongMixMaker(context.applicationContext) }
+    // "Start Mix" on a song: its YouTube Music radio (songs you have play from the phone, the
+    // rest are streamed). Without internet: a mix from your own library instead.
+    val radioMixMaker = remember { RadioMixMaker(context.applicationContext) }
+    val libraryMixMaker = remember { SongMixMaker(context.applicationContext) }
     fun startMix(song: Song) {
+        playerViewModel.playInOrder(listOf(song))  // the song itself starts right away
+        navigation.open(Page.NowPlaying)
+        showMessage("Making a mix…")
         scope.launch {
-            playerViewModel.playInOrder(mixMaker.make(song, songs, stats))
-            showMessage("Mix: ${song.title}")
-            navigation.open(Page.NowPlaying)
+            // Give YouTube 30 s at most (a slow connection), then fall back to the library.
+            val radio = try {
+                withTimeoutOrNull(30_000) { radioMixMaker.make(song, songs) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                null
+            }
+            val (rest, message) = radio?.let { it to "Mix ready: ${it.size} songs" }
+                ?: (libraryMixMaker.make(song, songs, stats).filter { it.id != song.id } to "Offline: a mix from your library")
+            if (playerViewModel.continueMix(song, rest)) showMessage(message)
         }
+    }
+
+    /** "Download" on a streamed song: save it to the library like any other download. */
+    fun downloadSong(song: Song) {
+        val videoId = song.streamVideoId ?: return
+        downloadViewModel.download("https://music.youtube.com/watch?v=$videoId")
+        showMessage("Downloading ${song.title}")
     }
 
     // --- What each page shows ---
@@ -239,6 +263,7 @@ fun RestartApp(
         },
         shufflePlaylist = ::shufflePlaylist,
         startMix = ::startMix,
+        downloadSong = ::downloadSong,
     )
     val entries = menus.entries(page)
 

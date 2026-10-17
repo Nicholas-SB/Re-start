@@ -8,6 +8,8 @@ import com.yausername.youtubedl_android.YoutubeDL
 import com.yausername.youtubedl_android.YoutubeDLRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
@@ -27,13 +29,17 @@ data class DownloadedSong(val file: File, val track: TrackInfo, val wasAlreadyIn
 class SongDownloader(private val context: Context) {
 
     private val prefs = context.getSharedPreferences("downloader", Context.MODE_PRIVATE)
-    private var initialized = false
 
     /**
      * Unpacks yt-dlp and ffmpeg the first time, and updates yt-dlp at most once a day.
      * YouTube changes often, and an old yt-dlp soon stops working.
+     * Downloads and streaming both call this, possibly at once; the Mutex makes them take turns.
      */
-    suspend fun prepare(onStatus: (String) -> Unit) = withContext(Dispatchers.IO) {
+    suspend fun prepare(onStatus: (String) -> Unit) = setupLock.withLock {
+        withContext(Dispatchers.IO) { setUp(onStatus) }
+    }
+
+    private fun setUp(onStatus: (String) -> Unit) {
         if (!initialized) {
             onStatus("Setting up downloader…")
             YoutubeDL.getInstance().init(context)
@@ -109,23 +115,32 @@ class SongDownloader(private val context: Context) {
      * Lists a playlist's songs without downloading anything (--flat-playlist only reads the
      * playlist page, not each video). Skips videos that are private or deleted.
      */
-    suspend fun readPlaylist(link: PlaylistLink): YoutubePlaylist = withContext(Dispatchers.IO) {
+    suspend fun readPlaylist(link: PlaylistLink, maxSongs: Int? = null): YoutubePlaylist = withContext(Dispatchers.IO) {
         val request = YoutubeDLRequest(link.url).apply {
             addOption("--flat-playlist")
             addOption("--yes-playlist")
+            if (maxSongs != null) addOption("--playlist-items", "1-$maxSongs")  // radios go on for hundreds
             addOption("-J")  // print the whole playlist as one JSON object
         }
-        val response = YoutubeDL.getInstance().execute(request, PROCESS_ID)
+        val response = YoutubeDL.getInstance().execute(request)
         val info = JSONObject(response.out.lines().last { it.trim().startsWith("{") })
         val entries = info.optJSONArray("entries")
         val songs = (0 until (entries?.length() ?: 0)).mapNotNull { index ->
             val entry = entries!!.getJSONObject(index)
             val videoId = entry.optString("id")
             val title = entry.stringOrNull("title") ?: videoId
+            val channel = entry.stringOrNull("channel")
+            // YouTube Music songs come from "<artist> - Topic" channels and have clean titles.
+            // Other videos are titled like "Artist - Song (Lyrics)": clean those up.
+            val (songTitle, artist) = when {
+                channel == null -> title to null
+                channel.endsWith(" - Topic") -> title to channel.removeSuffix(" - Topic")
+                else -> TrackInfoParser.parse(null, null, null, title, channel, null).let { it.title to it.artist }
+            }
             val song = PlaylistSong(
                 videoId = videoId,
-                title = title,
-                artist = entry.stringOrNull("channel")?.removeSuffix(" - Topic"),  // YouTube Music artists' channels
+                title = songTitle,
+                artist = artist,
                 durationSec = if (entry.has("duration") && !entry.isNull("duration")) entry.getDouble("duration").toInt() else null,
             )
             song.takeIf { isVideoId(videoId) && title !in unavailableTitles }
@@ -162,6 +177,11 @@ class SongDownloader(private val context: Context) {
 
     companion object {
         private const val PROCESS_ID = "song-download"
+
+        // Shared by every SongDownloader: yt-dlp only needs unpacking once per app run.
+        @Volatile
+        private var initialized = false
+        private val setupLock = Mutex()
         private const val KEY_LAST_UPDATE = "ytdlp_last_update"
         private const val UPDATE_INTERVAL_MS = 24 * 60 * 60 * 1000L
 

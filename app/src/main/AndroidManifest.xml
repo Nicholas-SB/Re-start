@@ -14,6 +14,8 @@
     <!-- Optional ("Pause for calls" in Settings): know when a call is ringing, so music pauses
          even when the ringer is silent. The app never sees who is calling. -->
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <!-- To know if there's internet before asking YouTube for a mix (else: a library mix). -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- Short vibrations for the click wheel's ticks. -->
     <uses-permission android:name="android.permission.VIBRATE" />
     <!-- Keep the CPU awake while music plays with the screen off. -->

@@ -8,8 +8,11 @@ import android.net.Uri
 import android.os.Build
 import android.util.LruCache
 import android.util.Size
+import com.example.custommusicplayer.downloader.YoutubeMusic
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.net.HttpURLConnection
+import java.net.URL
 
 /**
  * Loads the cover art embedded in each song file, and keeps recent ones in memory
@@ -30,7 +33,9 @@ class AlbumArtLoader(private val context: Context) {
 
         val bitmap = withContext(Dispatchers.IO) {
             try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                if (song.streamVideoId != null) {
+                    loadFromYoutube(song.streamVideoId, sizePx)
+                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     // Android 10+ can make (and cache) a thumbnail from the embedded art for us.
                     context.contentResolver.loadThumbnail(song.uri, Size(sizePx, sizePx), null)
                 } else {
@@ -63,6 +68,28 @@ class AlbumArtLoader(private val context: Context) {
         } finally {
             retriever.release()
         }
+    }
+
+    /**
+     * A streamed song's cover: YouTube's picture for the video (the biggest that exists),
+     * cut to the middle square. On YouTube Music songs that's the album cover.
+     */
+    private fun loadFromYoutube(videoId: String, sizePx: Int): Bitmap? {
+        for (url in YoutubeMusic.coverUrls(videoId)) {
+            val connection = URL(url).openConnection() as HttpURLConnection
+            try {
+                connection.connectTimeout = 5_000
+                connection.readTimeout = 5_000
+                if (connection.responseCode != HttpURLConnection.HTTP_OK) continue  // that size doesn't exist
+                val picture = connection.inputStream.use { BitmapFactory.decodeStream(it) } ?: continue
+                val side = minOf(picture.width, picture.height)
+                val square = Bitmap.createBitmap(picture, (picture.width - side) / 2, (picture.height - side) / 2, side, side)
+                return Bitmap.createScaledBitmap(square, minOf(sizePx, side), minOf(sizePx, side), true)
+            } finally {
+                connection.disconnect()
+            }
+        }
+        return null
     }
 
     // `companion object` holds what Java would make `static`.

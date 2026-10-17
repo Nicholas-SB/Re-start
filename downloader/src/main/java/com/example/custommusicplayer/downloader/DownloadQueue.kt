@@ -5,6 +5,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -192,9 +193,11 @@ class DownloadQueue private constructor(private val context: Context) {
             _progress.update { it.copy(currentStep = job.title ?: "Downloading…", currentPercent = 0f) }
             downloader.prepare { message -> setStatus(job.id, DownloadStatus.Preparing(message)) }
             setStatus(job.id, DownloadStatus.Downloading(0f))
-            val song = downloader.download(job.url) { percent ->
-                setStatus(job.id, DownloadStatus.Downloading(percent))
-                _progress.update { it.copy(currentPercent = percent) }
+            val song = retryIfRefused {
+                downloader.download(job.url) { percent ->
+                    setStatus(job.id, DownloadStatus.Downloading(percent))
+                    _progress.update { it.copy(currentPercent = percent) }
+                }
             }
 
             val title = "${song.track.artist} – ${song.track.title}"
@@ -227,6 +230,18 @@ class DownloadQueue private constructor(private val context: Context) {
             return null
         }
     }
+
+    /** YouTube sometimes refuses a download once ("HTTP Error 403") and allows it right after: try twice. */
+    private suspend fun <T> retryIfRefused(block: suspend () -> T): T =
+        try {
+            block()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            if ("HTTP Error 403" !in (e.message ?: "")) throw e
+            delay(2_000)
+            block()
+        }
 
     /**
      * Saves lyrics next to the song. If Android won't allow a .lrc file in that folder, keep it
