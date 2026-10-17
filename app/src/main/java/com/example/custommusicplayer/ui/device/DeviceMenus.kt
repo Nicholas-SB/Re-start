@@ -186,8 +186,14 @@ class DeviceMenus(
         MenuEntry("Pause for calls", detail = if (settings.pauseForCalls) "On · even when the ringer is silent" else "Off") {
             togglePauseForCalls()
         },
-        MenuEntry("Battery saver", detail = if (settings.batterySaver) "On · the audio chip plays with the screen off" else "Off") {
-            settings.toggleBatterySaver()
+        if (settings.batterySaverSupported) {
+            MenuEntry("Battery saver", detail = if (settings.batterySaver) "On · the audio chip plays with the screen off" else "Off") {
+                settings.toggleBatterySaver()
+            }
+        } else {
+            MenuEntry("Battery saver", detail = "Not supported on this phone") {
+                showMessage("This phone doesn't let apps use its audio chip")
+            }
         },
         MenuEntry("About", detail = "Re-start · your music, your player") {},
     )

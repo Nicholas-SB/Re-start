@@ -2,6 +2,8 @@ package com.example.custommusicplayer.ui.device
 
 import android.content.Context
 import android.media.AudioAttributes
+import android.media.AudioFormat
+import android.media.AudioManager
 import android.media.SoundPool
 import android.os.Build
 import android.os.VibrationAttributes
@@ -48,6 +50,13 @@ class DeviceSettings(context: Context) {
         private set
     var batterySaver by mutableStateOf(prefs.getBoolean(KEY_AUDIO_OFFLOAD, true))
         private set
+
+    /**
+     * Whether this phone lets apps hand music to its audio chip ("offload"), which is what
+     * Battery saver does. Some phones say no, often because their own sound processing needs
+     * the main processor; then the switch can't do anything.
+     */
+    val batterySaverSupported: Boolean = offloadSupported(context)
     var songSort by mutableStateOf(
         SongSort.entries.firstOrNull { it.name == prefs.getString(KEY_SONG_SORT, null) } ?: SongSort.A_TO_Z
     )
@@ -76,6 +85,26 @@ class DeviceSettings(context: Context) {
     fun cycleSongSort() {
         songSort = songSort.next()
         prefs.edit().putString(KEY_SONG_SORT, songSort.name).apply()
+    }
+
+    /** Asks Android whether it would offload our kind of song (AAC, 44.1 kHz stereo). */
+    private fun offloadSupported(context: Context): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return false  // no offload before Android 10
+        val format = AudioFormat.Builder()
+            .setEncoding(AudioFormat.ENCODING_AAC_LC)
+            .setSampleRate(44_100)
+            .setChannelMask(AudioFormat.CHANNEL_OUT_STEREO)
+            .build()
+        val attributes = AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_MEDIA)
+            .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+            .build()
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            AudioManager.getPlaybackOffloadSupport(format, attributes) != AudioManager.PLAYBACK_OFFLOAD_NOT_SUPPORTED
+        } else {
+            @Suppress("DEPRECATION")  // the Android 10-11 way
+            AudioManager.isOffloadedPlaybackSupported(format, attributes)
+        }
     }
 
     private fun loadVibration(): VibrationLevel {
