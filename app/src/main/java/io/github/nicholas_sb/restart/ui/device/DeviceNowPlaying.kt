@@ -1,5 +1,14 @@
 package io.github.nicholas_sb.restart.ui.device
 
+import android.os.SystemClock
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.StateFlow
+import java.util.concurrent.Executors
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
@@ -78,11 +87,11 @@ import kotlin.math.abs
 fun DeviceNowPlaying(
     song: Song?,
     state: PlayerUiState,
-    positionMs: Long,
+    positionMs: StateFlow<Long>,  // collected only where it's shown, so ticking redraws just that
     artLoader: AlbumArtLoader,
     lyricsLoader: LyricsLoader,
     showLyrics: Boolean,
-    volumeFraction: Float?,  // not null while the volume bar should show
+    volumeBar: VolumeBarState,
     coverStyle: CoverStyle,
     discAngle: () -> Float,  // from rememberDiscAngle, kept by the whole app
     onSeek: (Long) -> Unit,
@@ -132,9 +141,10 @@ fun DeviceNowPlaying(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(top = 4.dp),
                 )
+                val position by positionMs.collectAsStateWithLifecycle()
                 LyricsPanel(
                     state = lyricsState,
-                    positionMs = positionMs,
+                    positionMs = position,
                     onSeek = onSeek,
                     modifier = Modifier.weight(1f).fillMaxWidth(),
                 )
@@ -152,11 +162,7 @@ fun DeviceNowPlaying(
             }
 
             Spacer(Modifier.height(8.dp))
-            if (volumeFraction != null) {
-                VolumeBar(volumeFraction)
-            } else {
-                SongProgress(positionMs = positionMs, durationMs = song.durationMs)
-            }
+            ProgressOrVolume(song, positionMs, volumeBar)
         }
     }
 }
@@ -349,6 +355,28 @@ private fun Disc(song: Song, artLoader: AlbumArtLoader, angle: () -> Float, modi
     }
 }
 
+/**
+ * The bottom of Now Playing: the song's progress, or the volume while the wheel is turning.
+ * It's its own small composable on purpose: the position (5 times a second) and the volume
+ * (every wheel step) are read only here, so only this bar redraws, not the disc above it.
+ */
+@Composable
+private fun ProgressOrVolume(song: Song, positionMs: StateFlow<Long>, volumeBar: VolumeBarState) {
+    // A new change restarts this, so the volume bar stays while you keep turning.
+    LaunchedEffect(volumeBar.changedAt) {
+        if (volumeBar.fraction == null) return@LaunchedEffect
+        delay(1_500)
+        volumeBar.hide()
+    }
+    val volume = volumeBar.fraction
+    if (volume != null) {
+        VolumeBar(volume)
+    } else {
+        val position by positionMs.collectAsStateWithLifecycle()
+        SongProgress(positionMs = position, durationMs = song.durationMs)
+    }
+}
+
 /** Progress bar with elapsed time on the left and time remaining on the right. */
 @Composable
 private fun SongProgress(positionMs: Long, durationMs: Long) {
@@ -362,9 +390,11 @@ private fun SongProgress(positionMs: Long, durationMs: Long) {
 
 @Composable
 private fun VolumeBar(fraction: Float) {
+    // Glide to the new level instead of jumping a whole step.
+    val shown by animateFloatAsState(fraction, motionSpec(150), label = "volume")
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 21.dp)) {
         Icon(painterResource(R.drawable.ic_volume_down), contentDescription = null, tint = DeviceColors.Text, modifier = Modifier.size(18.dp))
-        DeviceBar(fraction = fraction, modifier = Modifier.weight(1f).padding(horizontal = 6.dp))
+        DeviceBar(fraction = shown, modifier = Modifier.weight(1f).padding(horizontal = 6.dp))
         Icon(painterResource(R.drawable.ic_volume_up), contentDescription = "Volume", tint = DeviceColors.Text, modifier = Modifier.size(18.dp))
     }
 }
@@ -393,17 +423,47 @@ private fun DeviceBar(fraction: Float, modifier: Modifier = Modifier) {
 /**
  * The phone's media volume, changed by turning the wheel on Now Playing.
  * We draw our own volume bar, so Android's volume popup is not shown (flags = 0).
+ *
+ * It keeps its own idea of the level while you turn: Android applies a volume change a moment
+ * later, so reading it back right away could still give the old level (the bar jumped back and
+ * forth). The change itself is sent from a background thread, so the screen never waits on it.
  */
 class VolumeControl(context: Context) {
     private val audioManager = context.getSystemService(AudioManager::class.java)
+    private val max = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+    private val background = Executors.newSingleThreadExecutor()  // changes go out in order
+    private var level: Int? = null  // the level we set, while the volume bar is showing
 
-    fun change(steps: Int) {
-        val direction = if (steps > 0) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER
-        repeat(abs(steps)) { audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC, direction, 0) }
+    /** Moves the volume by [steps] (+ louder, - quieter) and returns the new level, 0..1. */
+    fun change(steps: Int): Float {
+        val current = level ?: audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+        val target = (current + steps).coerceIn(0, max)
+        level = target
+        background.execute { audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, target, 0) }
+        return target.toFloat() / max
     }
 
-    /** Current volume, 0..1. */
-    val fraction: Float
-        get() = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() /
-            audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+    /** The bar went away: next time, start from the phone's real volume (the buttons may have changed it). */
+    fun forget() {
+        level = null
+    }
+}
+
+/** The volume bar on Now Playing: its level while it shows (null = hidden), and when it last changed. */
+class VolumeBarState(private val control: VolumeControl) {
+    var fraction by mutableStateOf<Float?>(null)
+        private set
+    var changedAt by mutableLongStateOf(0L)
+        private set
+
+    /** A turn of the wheel: change the volume and show it. */
+    fun turn(steps: Int) {
+        fraction = control.change(steps)
+        changedAt = SystemClock.uptimeMillis()
+    }
+
+    fun hide() {
+        fraction = null
+        control.forget()
+    }
 }

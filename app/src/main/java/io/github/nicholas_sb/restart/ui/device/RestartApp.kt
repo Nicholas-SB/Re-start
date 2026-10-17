@@ -108,7 +108,6 @@ fun RestartApp(
     val musicFolder by libraryViewModel.musicFolder.collectAsStateWithLifecycle()
     val folderChoices by libraryViewModel.folderChoices.collectAsStateWithLifecycle()
     val playerState by playerViewModel.uiState.collectAsStateWithLifecycle()
-    val positionMs by playerViewModel.positionMs.collectAsStateWithLifecycle()
     val playlists by playlistViewModel.playlists.collectAsStateWithLifecycle()
     val stats by statsViewModel.stats.collectAsStateWithLifecycle()
 
@@ -159,16 +158,10 @@ fun RestartApp(
         messageTime = SystemClock.uptimeMillis()
     }
 
-    // Volume bar: shown for a moment after each wheel turn on Now Playing.
+    // Volume bar: shown for a moment after each wheel turn on Now Playing. Its state lives in
+    // its own object, read only by the bar, so turning the wheel doesn't redraw this whole screen.
     val context = LocalContext.current
-    val volume = remember { VolumeControl(context) }
-    var volumeFraction by remember { mutableStateOf<Float?>(null) }
-    var lastVolumeChange by remember { mutableLongStateOf(0L) }
-    LaunchedEffect(lastVolumeChange) {
-        if (lastVolumeChange == 0L) return@LaunchedEffect
-        delay(1_500)  // a new change restarts this effect, so the bar stays while you keep turning
-        volumeFraction = null
-    }
+    val volumeBar = remember { VolumeBarState(VolumeControl(context)) }
 
     val acceleration = remember { WheelAcceleration() }
 
@@ -411,11 +404,7 @@ fun RestartApp(
     fun onRotate(steps: Int) {
         val current = navigation.currentPage
         when (current) {
-            Page.NowPlaying -> {
-                volume.change(steps)
-                volumeFraction = volume.fraction
-                lastVolumeChange = SystemClock.uptimeMillis()
-            }
+            Page.NowPlaying -> volumeBar.turn(steps)
             is Page.NameEntry, Page.Download, Page.PlaylistImport -> {}  // nothing to scroll
             else -> {
                 val moved = acceleration.apply(steps, SystemClock.uptimeMillis())
@@ -548,11 +537,11 @@ fun RestartApp(
                                     Page.NowPlaying -> DeviceNowPlaying(
                                         song = currentSong,
                                         state = playerState,
-                                        positionMs = positionMs,
+                                        positionMs = playerViewModel.positionMs,
                                         artLoader = libraryViewModel.artLoader,
                                         lyricsLoader = libraryViewModel.lyricsLoader,
                                         showLyrics = showLyrics,
-                                        volumeFraction = volumeFraction,
+                                        volumeBar = volumeBar,
                                         coverStyle = settings.coverStyle,
                                         discAngle = discAngle,
                                         onSeek = playerViewModel::seekTo,
