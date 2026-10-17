@@ -65,11 +65,16 @@ class YoutubeMusic(context: Context) {
                 id to entry.optString("title")
             }
             val wanted = simplify(title)
-            results.firstOrNull { (_, resultTitle) ->
+            val matching = results.firstOrNull { (_, resultTitle) ->
                 simplify(resultTitle) == wanted || simplify(resultTitle.substringBefore(" - ")) == wanted
-            } ?: results.firstOrNull()
+            }
+            // A match by its listed title: keep the title as you know it (the details may give the
+            // English one: "That band" for "あのバンド").
+            matching?.let { (id, _) -> id to title } ?: results.firstOrNull()?.let { (id, _) -> id to null }
         } ?: return null
-        return songDetails(best.first)
+        val (videoId, matchedTitle) = best
+        val details = songDetails(videoId) ?: return null
+        return if (matchedTitle != null) details.copy(title = matchedTitle) else details
     }
 
     /** What YouTube knows about a video as a song (its real title and artist), or null if it isn't linked to one. */
