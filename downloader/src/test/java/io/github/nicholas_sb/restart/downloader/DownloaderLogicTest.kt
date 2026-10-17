@@ -100,6 +100,73 @@ class DownloaderLogicTest {
         ).forEach { assertEquals(it, LinkKind.UNKNOWN, linkKind(it)) }
     }
 
+    private fun video(title: String, channel: String) = TrackInfoParser.parse(null, null, null, title, channel, null)
+
+    @Test
+    fun cleansNoiseOutsideBrackets() {
+        assertEquals("Earrings", video("Malcolm Todd - Earrings (Lyrics)", "Vibe Music").title)
+        assertEquals("Sweater Weather", video("The Neighbourhood - Sweater Weather Official Music Video", "x").title)
+        assertEquals("Harvey", video("Her's – Harvey | Official Audio", "x").title)
+        assertEquals("Lemon", video("Lemon #shorts #fyp", "Kenshi Yonezu").title)
+    }
+
+    @Test
+    fun readsJapaneseQuotedTitles() {
+        val song = video("YOASOBI「アイドル」 Official Music Video", "Ayase / YOASOBI")
+        assertEquals("アイドル", song.title)
+        assertEquals("YOASOBI", song.artist)
+    }
+
+    @Test
+    fun aQuotedTitleOnSomeoneElsesChannelIsNotArtistAndSong() {
+        // A cover: "Renai Circulation" is the song's English name, the singer is the channel.
+        val cover = video("Renai Circulation「恋愛サーキュレーション」歌ってみた", "*namirin")
+        assertEquals("*namirin", cover.artist)
+        assertEquals("Renai Circulation「恋愛サーキュレーション」歌ってみた", cover.title)
+    }
+
+    @Test
+    fun dropsOfficialFromChannelNames() {
+        assertEquals("Arctic Monkeys", video("I Wanna Be Yours", "Official Arctic Monkeys").artist)
+        assertEquals("BLACKPINK", video("Song", "BLACKPINK Official").artist)
+        assertEquals("Roselia", video("Song", "RoseliaVEVO").artist)
+    }
+
+    @Test
+    fun keepsSongNamesThatOnlyLookLikeNoise() {
+        // "Video Killed the Radio Star" mustn't lose "Video", only trailing noise goes.
+        assertEquals("Video Killed the Radio Star", video("The Buggles - Video Killed the Radio Star", "x").title)
+    }
+
+    @Test
+    fun theOfficialTrackOfALyricVideoIsTheSameSong() {
+        val guess = PlaylistSong("_2ryssitVds", "Earrings", "Malcolm Todd", 152)
+        val official = PlaylistSong("BI9HQCzpDgQ", "Earrings", "Malcolm Todd", 151, clean = true)
+        assertEquals(SongMatch.SAME_SONG, compareSongs(guess, official))
+    }
+
+    @Test
+    fun aLongMusicVideoOnlySharesTheName() {
+        val guess = PlaylistSong("ZRtdQ81jPUQ", "アイドル", "YOASOBI", 260)
+        val official = PlaylistSong("m9SMT5ipbxk", "アイドル", "YOASOBI, Ayase", 213, clean = true)
+        assertEquals(SongMatch.SAME_NAME, compareSongs(guess, official))
+    }
+
+    @Test
+    fun coversAndOtherSongsDontMatch() {
+        val guess = PlaylistSong("aaaaaaaaaaa", "Creep", "Some Cover Band", 238)
+        assertEquals(SongMatch.DIFFERENT, compareSongs(guess, PlaylistSong("bbbbbbbbbbb", "Creep", "Radiohead", 238)))
+        assertEquals(SongMatch.DIFFERENT, compareSongs(guess, PlaylistSong("ccccccccccc", "Karma Police", "Some Cover Band", 238)))
+        // Without a guessed artist there's nothing to compare: don't switch.
+        assertEquals(SongMatch.DIFFERENT, compareSongs(guess.copy(artist = null), PlaylistSong("ddddddddddd", "Creep", "Radiohead", 238)))
+    }
+
+    @Test
+    fun punctuationAndAccentsDontMatter() {
+        val guess = PlaylistSong("aaaaaaaaaaa", "Hers", "Her's", 200)
+        assertEquals(SongMatch.SAME_SONG, compareSongs(guess, PlaylistSong("bbbbbbbbbbb", "Her's", "Hers", 199)))
+    }
+
     @Test
     fun readsPlaylistLinks() {
         val music = playlistLink("https://music.youtube.com/playlist?list=PLx0sYbCqOb8TBPRdmBHs5Iftvv9TPboYG&si=AbC")

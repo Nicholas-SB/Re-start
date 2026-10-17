@@ -37,8 +37,18 @@ data class PlaylistChoice(val id: Long, val name: String)
 /** A playlist as listed by yt-dlp: its name and its songs, in order. */
 data class YoutubePlaylist(val title: String, val songs: List<PlaylistSong>)
 
-/** One song of a YouTube playlist. [artist] is the channel ("X - Topic" becomes "X"). */
-data class PlaylistSong(val videoId: String, val title: String, val artist: String? = null, val durationSec: Int? = null)
+/**
+ * One song of a YouTube playlist or radio. [clean] means the title and artist are the real
+ * ones (a YouTube Music track, or already fixed by SongFixer); otherwise they were guessed
+ * from a video's title and channel.
+ */
+data class PlaylistSong(
+    val videoId: String,
+    val title: String,
+    val artist: String? = null,
+    val durationSec: Int? = null,
+    val clean: Boolean = false,
+)
 
 /**
  * Finds [wanted] among the songs already on the phone, so it isn't downloaded twice.

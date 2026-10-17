@@ -249,9 +249,16 @@ fun RestartApp(
             } catch (e: Exception) {
                 null
             }
-            val (rest, message) = radio?.let { it to "Mix ready: ${it.size} songs" }
-                ?: (libraryMixMaker.make(song, songs, stats).filter { it.id != song.id } to "Offline: a mix from your library")
-            if (playerViewModel.continueMix(song, rest)) showMessage(message)
+            if (radio != null) {
+                if (playerViewModel.continueMix(song, radio.songs)) {
+                    showMessage("Mix ready: ${radio.songs.size} songs")
+                    // Guessed titles get fixed while the mix plays; Up Next updates as they do.
+                    radioMixMaker.fixLater(radio, songs) { oldId, fixed -> playerViewModel.replaceInQueue(oldId, fixed) }
+                }
+            } else {
+                val rest = libraryMixMaker.make(song, songs, stats).filter { it.id != song.id }
+                if (playerViewModel.continueMix(song, rest)) showMessage("Offline: a mix from your library")
+            }
         }
     }
 

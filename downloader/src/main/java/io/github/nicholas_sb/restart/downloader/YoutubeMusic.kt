@@ -44,6 +44,49 @@ class YoutubeMusic(context: Context) {
     }
 
     /**
+     * The top "Songs" result on YouTube Music for [title] by [artist], with its real title,
+     * artist and length (one call: search, then read the first result in full), or null.
+     */
+    suspend fun findSong(title: String, artist: String?): PlaylistSong? {
+        downloader.prepare {}
+        return withContext(Dispatchers.IO) {
+            val query = URLEncoder.encode(listOfNotNull(artist, title).joinToString(" "), "UTF-8")
+            val request = YoutubeDLRequest("https://music.youtube.com/search?q=$query#songs").apply {
+                addOption("--playlist-items", "1")
+                addOption("-J")
+            }
+            lastJson(YoutubeDL.getInstance().execute(request).out)
+                .optJSONArray("entries")?.optJSONObject(0)?.toSong()
+        }
+    }
+
+    /** What YouTube knows about a video as a song (its real title and artist), or null if it isn't linked to one. */
+    suspend fun songDetails(videoId: String): PlaylistSong? {
+        require(isVideoId(videoId))
+        downloader.prepare {}
+        return withContext(Dispatchers.IO) {
+            val request = YoutubeDLRequest("https://music.youtube.com/watch?v=$videoId").apply {
+                addOption("-J")
+                addOption("--skip-download")
+            }
+            lastJson(YoutubeDL.getInstance().execute(request).out).toSong()
+        }
+    }
+
+    /** yt-dlp's JSON line (warnings may come before it). */
+    private fun lastJson(out: String) = JSONObject(out.lines().last { it.trim().startsWith("{") })
+
+    /** A video's details as a song, if YouTube has the real track and artist for it. */
+    private fun JSONObject.toSong(): PlaylistSong? {
+        val id = optString("id").takeIf(::isVideoId) ?: return null
+        val track = optString("track").takeIf { has("track") && !isNull("track") && it.isNotBlank() } ?: return null
+        val artist = optString("artist").takeIf { has("artist") && !isNull("artist") && it.isNotBlank() } ?: return null
+        val duration = if (has("duration") && !isNull("duration")) getDouble("duration").toInt() else null
+        // "YOASOBI, Ayase" -> "YOASOBI", like the downloads do.
+        return PlaylistSong(id, track, artist.substringBefore(",").trim(), duration, clean = true)
+    }
+
+    /**
      * A link to stream [videoId]'s audio. YouTube's links stop working after some hours,
      * so each is kept for 3 hours and then looked up again.
      */

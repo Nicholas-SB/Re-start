@@ -175,6 +175,19 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         return if (stopsAt == SleepTimerCommand.END_OF_SONG.toLong()) SleepTimer.EndOfSong else SleepTimer.At(stopsAt)
     }
 
+    /**
+     * Swaps a queued song for [song] (a mix's guessed title turned out to be this). The song
+     * that's playing right now is left alone, so it doesn't restart.
+     */
+    fun replaceInQueue(oldSongId: Long, song: Song) {
+        val player = controller ?: return
+        for (index in 0 until player.mediaItemCount) {
+            if (index != player.currentMediaItemIndex && player.getMediaItemAt(index).mediaId == oldSongId.toString()) {
+                player.replaceMediaItem(index, song.toMediaItem())
+            }
+        }
+    }
+
     /** Turns shuffle on and plays [songs] starting from a random one. */
     fun shuffleAll(songs: List<Song>) {
         if (songs.isEmpty()) return

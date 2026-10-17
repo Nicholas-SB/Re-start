@@ -42,6 +42,7 @@ class ForYouRepository(context: Context) {
                         title = song.getString("title"),
                         artist = song.optString("artist").ifEmpty { null },
                         durationSec = song.optInt("durationSec", 0).takeIf { it > 0 },
+                        clean = song.optBoolean("clean"),
                     )
                 }
             }
@@ -84,7 +85,7 @@ class ForYouRepository(context: Context) {
         return list
     }
 
-    private suspend fun save(list: ForYouList) = withContext(Dispatchers.IO) {
+    suspend fun save(list: ForYouList) = withContext(Dispatchers.IO) {
         val songs = JSONArray()
         list.songs.forEach { song ->
             songs.put(
@@ -93,6 +94,7 @@ class ForYouRepository(context: Context) {
                     .put("title", song.title)
                     .put("artist", song.artist.orEmpty())
                     .put("durationSec", song.durationSec ?: 0)
+                    .put("clean", song.clean)
             )
         }
         file.writeText(JSONObject().put("day", list.day).put("songs", songs).toString())

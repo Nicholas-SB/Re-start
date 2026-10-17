@@ -142,6 +142,7 @@ class SongDownloader(private val context: Context) {
                 title = songTitle,
                 artist = artist,
                 durationSec = if (entry.has("duration") && !entry.isNull("duration")) entry.getDouble("duration").toInt() else null,
+                clean = channel?.endsWith(" - Topic") == true,
             )
             song.takeIf { isVideoId(videoId) && title !in unavailableTitles }
         }

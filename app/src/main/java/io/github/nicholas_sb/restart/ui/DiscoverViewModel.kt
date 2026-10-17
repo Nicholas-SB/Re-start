@@ -1,5 +1,15 @@
 package io.github.nicholas_sb.restart.ui
 
+import io.github.nicholas_sb.restart.data.discover.ForYouList
+import io.github.nicholas_sb.restart.downloader.LibrarySong
+import io.github.nicholas_sb.restart.downloader.SongFixer
+import io.github.nicholas_sb.restart.downloader.findInLibrary
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -28,6 +38,12 @@ data class ForYouState(
 class DiscoverViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = ForYouRepository(application)
+    private val fixer = SongFixer.get(application)
+
+    // The list being shown (to save it again as titles get fixed) and the library it skips.
+    private var list: ForYouList? = null
+    private var library: List<Song> = emptyList()
+    private var fixing: Job? = null
 
     private val _forYou = MutableStateFlow(ForYouState())
     val forYou: StateFlow<ForYouState> = _forYou.asStateFlow()
@@ -59,7 +75,45 @@ class DiscoverViewModel(application: Application) : AndroidViewModel(application
                 current.songs.isNotEmpty() -> current.copy(loading = false, problem = "Needs internet for new picks")
                 else -> ForYouState(problem = if (repository.hasInternet()) "Couldn't reach YouTube Music" else "Needs internet")
             }
+            (list ?: saved)?.let { shown -> fixTitles(shown, library) }
         }
+    }
+
+    /**
+     * Songs with guessed titles (videos rather than YouTube Music tracks) get looked up, three
+     * at a time, while the list is already on screen. Each row updates as its answer comes in.
+     * A song that turns out to be one you have drops out (For You is for new music).
+     */
+    private fun fixTitles(shown: ForYouList, library: List<Song>) {
+        this.list = shown
+        this.library = library
+        fixing?.cancel()
+        val messy = shown.songs.filter { !it.clean }
+        if (messy.isEmpty()) return
+        fixing = viewModelScope.launch {
+            val onPhone = library.map { LibrarySong(it.fileName, it.title, it.artist, it.durationMs) }
+            val oneAtATime = Mutex()  // updates to the list happen one after another
+            val gate = Semaphore(3)   // at most 3 lookups at once
+            messy.map { song ->
+                launch {
+                    val fixed = gate.withPermit { fixer.fix(song) }
+                    if (fixed == song) return@launch
+                    oneAtATime.withLock { replace(song, fixed, owned = findInLibrary(onPhone, fixed) != null) }
+                }
+            }.joinAll()
+            list?.let { repository.save(it) }
+        }
+    }
+
+    private fun replace(old: PlaylistSong, fixed: PlaylistSong, owned: Boolean) {
+        val current = list ?: return
+        val songs = if (owned) {
+            current.songs.filter { it.videoId != old.videoId }
+        } else {
+            current.songs.map { if (it.videoId == old.videoId) fixed else it }.distinctBy { it.videoId }
+        }
+        list = current.copy(songs = songs)
+        _forYou.update { it.copy(songs = songs.map(::toSong)) }
     }
 
     private fun toSong(song: PlaylistSong) =
