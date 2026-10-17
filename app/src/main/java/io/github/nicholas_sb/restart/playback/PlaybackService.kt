@@ -177,6 +177,37 @@ class PlaybackService : MediaSessionService() {
         }
     }
 
+    // --- Changing records ---
+    // Pressing next/previous (or picking a song in Up Next) stops for half a second before the
+    // new song plays, like putting another record on. A switch in Extras turns it off.
+
+    private var resumeAfterRecordChange: Runnable? = null
+
+    private val recordChange = object : Player.Listener {
+        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            // SEEK: you moved to another song. (A song ending by itself goes straight on.)
+            if (reason != Player.MEDIA_ITEM_TRANSITION_REASON_SEEK) return
+            if (!settingsPrefs.getBoolean(KEY_RECORD_CHANGE, true)) return
+            val waiting = resumeAfterRecordChange
+            if (!player.playWhenReady && waiting == null) return  // paused: nothing to wait for
+            // Skipping again while still waiting: wait again, from now.
+            waiting?.let(playerHandler::removeCallbacks)
+            player.pause()
+            resumeAfterRecordChange = Runnable {
+                resumeAfterRecordChange = null
+                player.play()
+            }.also { playerHandler.postDelayed(it, RECORD_CHANGE_MS) }
+        }
+
+        override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+            // Play pressed during the pause: it plays right away, no need to wait any more.
+            if (playWhenReady) {
+                resumeAfterRecordChange?.let(playerHandler::removeCallbacks)
+                resumeAfterRecordChange = null
+            }
+        }
+    }
+
     // --- Sleep timer ---
     // It lives here rather than in the screen, so it keeps counting with the app swiped away.
 
@@ -406,6 +437,7 @@ class PlaybackService : MediaSessionService() {
         player.addListener(statsListener)
         player.addListener(skipBrokenStreams)
         player.addListener(sleepAtEndOfSong)
+        player.addListener(recordChange)
         player.addAudioOffloadListener(offloadLogger)
         applyBatterySaver()
         settingsPrefs.registerOnSharedPreferenceChangeListener(batterySaverSwitch)
@@ -459,6 +491,12 @@ private const val TAG = "PlaybackService"
 
 /** Same key as DeviceSettings' "Battery saver" switch. */
 private const val KEY_AUDIO_OFFLOAD = "audio_offload"
+
+/** Same key as DeviceSettings' "Record change" switch. */
+private const val KEY_RECORD_CHANGE = "record_change"
+
+/** The pause between songs when you skip, like putting another record on. */
+private const val RECORD_CHANGE_MS = 500L
 
 /** How long the music fades out before the sleep timer pauses it. */
 private const val SLEEP_FADE_MS = 8_000L

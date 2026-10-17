@@ -57,6 +57,8 @@ class DeviceSettings(context: Context) {
         private set
     var batterySaver by mutableStateOf(prefs.getBoolean(KEY_AUDIO_OFFLOAD, true))
         private set
+    var recordChange by mutableStateOf(prefs.getBoolean(KEY_RECORD_CHANGE, true))
+        private set
 
     /**
      * Whether this phone lets apps hand music to its audio chip ("offload"), which is what
@@ -93,6 +95,11 @@ class DeviceSettings(context: Context) {
     fun toggleBatterySaver() {
         batterySaver = !batterySaver
         prefs.edit().putBoolean(KEY_AUDIO_OFFLOAD, batterySaver).apply()  // PlaybackService reads this
+    }
+
+    fun toggleRecordChange() {
+        recordChange = !recordChange
+        prefs.edit().putBoolean(KEY_RECORD_CHANGE, recordChange).apply()  // PlaybackService reads this
     }
 
     fun toggleAnimations() {
@@ -147,6 +154,7 @@ class DeviceSettings(context: Context) {
         const val KEY_COVER_STYLE = "cover_style"
         const val KEY_PAUSE_FOR_CALLS = "pause_for_calls"
         const val KEY_AUDIO_OFFLOAD = "audio_offload"
+        const val KEY_RECORD_CHANGE = "record_change"
     }
 }
 

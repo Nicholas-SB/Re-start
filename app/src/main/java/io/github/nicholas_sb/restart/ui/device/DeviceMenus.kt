@@ -295,6 +295,9 @@ class DeviceMenus(
             CoverStyle.DISC -> "Disc · a record that spins while playing"
             CoverStyle.SQUARE -> "Square"
         }) { settings.cycleCoverStyle() },
+        MenuEntry("Record change", detail = if (settings.recordChange) "On · a short pause when you skip, like putting on a record" else "Off") {
+            settings.toggleRecordChange()
+        },
         MenuEntry("Clicker", detail = if (settings.clickSound) "On · click sound for every wheel step" else "Off") {
             settings.toggleClickSound()
         },
