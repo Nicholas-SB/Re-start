@@ -21,10 +21,7 @@ class RadioMixMaker(private val context: Context) {
     suspend fun make(seed: Song, library: List<Song>): List<Song> {
         // Without internet yt-dlp keeps retrying for minutes: don't even start.
         check(hasInternet()) { "No internet" }
-        val videoId = seed.streamVideoId
-            ?: youtubeIdInFileName(seed.fileName)
-            ?: youtube.search(seed.title, seed.artist.takeUnless { it == "Unknown artist" })
-            ?: error("Couldn't find this song on YouTube")
+        val videoId = videoIdFor(seed) ?: error("Couldn't find this song on YouTube")
 
         val onPhone = library.map { LibrarySong(it.fileName, it.title, it.artist, it.durationMs) }
         val byFileName = library.associateBy { it.fileName }
@@ -38,7 +35,13 @@ class RadioMixMaker(private val context: Context) {
             .distinctBy { it.id }
     }
 
-    private fun hasInternet(): Boolean {
+    /** The song's YouTube id: from the file name if it's there, else YouTube Music's search. */
+    suspend fun videoIdFor(song: Song): String? =
+        song.streamVideoId
+            ?: youtubeIdInFileName(song.fileName)
+            ?: youtube.search(song.title, song.artist.takeUnless { it == "Unknown artist" })
+
+    fun hasInternet(): Boolean {
         val connectivity = context.getSystemService(ConnectivityManager::class.java)
         val capabilities = connectivity.getNetworkCapabilities(connectivity.activeNetwork) ?: return false
         return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)

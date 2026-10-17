@@ -58,6 +58,7 @@ import com.example.custommusicplayer.downloader.DownloadViewModel
 import com.example.custommusicplayer.downloader.PlaylistChoice
 import com.example.custommusicplayer.downloader.PlaylistImportScreen
 import com.example.custommusicplayer.ui.AudioPermissionGate
+import com.example.custommusicplayer.ui.DiscoverViewModel
 import com.example.custommusicplayer.ui.LibraryViewModel
 import com.example.custommusicplayer.ui.PlayerViewModel
 import com.example.custommusicplayer.ui.PlaylistViewModel
@@ -83,6 +84,7 @@ fun RestartApp(
     playlistViewModel: PlaylistViewModel = viewModel(),
     statsViewModel: StatsViewModel = viewModel(),
     downloadViewModel: DownloadViewModel = viewModel(),
+    discoverViewModel: DiscoverViewModel = viewModel(),
     navigation: DeviceNavigationViewModel = viewModel(),
 ) {
     val songs by libraryViewModel.songs.collectAsStateWithLifecycle()
@@ -236,6 +238,12 @@ fun RestartApp(
         showMessage("Downloading ${song.title}")
     }
 
+    // For You: make sure today's picks are there whenever the page is open.
+    val forYou by discoverViewModel.forYou.collectAsStateWithLifecycle()
+    LaunchedEffect(page, songs.isNotEmpty()) {
+        if (page == Page.ForYou) discoverViewModel.load(songs, stats)
+    }
+
     // --- What each page shows ---
 
     val menus = DeviceMenus(
@@ -264,6 +272,8 @@ fun RestartApp(
         shufflePlaylist = ::shufflePlaylist,
         startMix = ::startMix,
         downloadSong = ::downloadSong,
+        forYou = forYou,
+        refreshForYou = { newPicks -> discoverViewModel.load(songs, stats, newPicks) },
     )
     val entries = menus.entries(page)
 

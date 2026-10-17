@@ -4,6 +4,7 @@ import com.example.custommusicplayer.data.Song
 import com.example.custommusicplayer.data.db.PlaylistSummary
 import com.example.custommusicplayer.data.db.SongStatsEntity
 import com.example.custommusicplayer.ui.FolderChoice
+import com.example.custommusicplayer.ui.ForYouState
 import com.example.custommusicplayer.ui.PlayerUiState
 import com.example.custommusicplayer.ui.PlayerViewModel
 import com.example.custommusicplayer.ui.PlaylistDetail
@@ -37,12 +38,15 @@ class DeviceMenus(
     private val shufflePlaylist: (playlistId: Long) -> Unit,
     private val startMix: (song: Song) -> Unit,
     private val downloadSong: (song: Song) -> Unit,
+    private val forYou: ForYouState,
+    private val refreshForYou: (newPicks: Boolean) -> Unit,
 ) {
 
     fun title(page: Page): String = when (page) {
         Page.MainMenu -> "Re-start"
         Page.Music -> "Music"
         Page.Songs -> "Songs"
+        Page.ForYou -> "For You"
         Page.Stats -> "Stats"
         Page.Download -> "Download"
         Page.PlaylistImport -> "Import Playlist"
@@ -55,7 +59,7 @@ class DeviceMenus(
         is Page.Playlist -> playlistName(page.playlistId)
         is Page.PlaylistOptions -> playlistName(page.playlistId)
         is Page.PlaylistEntryOptions -> "Song Options"
-        is Page.SongOptions -> songsById[page.songId]?.title ?: "Song"
+        is Page.SongOptions -> findSong(page.songId)?.title ?: "Song"
         is Page.AddToPlaylist -> "Add to Playlist"
         is Page.NameEntry -> if (page.renamePlaylistId != null) "Rename Playlist" else "New Playlist"
         is Page.ConfirmDelete -> "Delete Playlist?"
@@ -65,6 +69,7 @@ class DeviceMenus(
         Page.MainMenu -> mainMenu()
         Page.Music -> musicMenu()
         Page.Songs -> songsMenu()
+        Page.ForYou -> forYouMenu()
         Page.Stats -> statsMenu()
         Page.Extras -> extrasMenu()
         Page.MusicFolder -> musicFolderMenu()
@@ -85,6 +90,7 @@ class DeviceMenus(
 
     private fun mainMenu() = buildList {
         add(MenuEntry("Music", opensSubmenu = true) { navigation.open(Page.Music) })
+        add(MenuEntry("For You", opensSubmenu = true) { navigation.open(Page.ForYou) })
         // Pinned playlists: one click shuffles them. Hold the center for the playlist's options.
         playlists.filter { it.pinned }.forEach { playlist ->
             add(
@@ -325,12 +331,45 @@ class DeviceMenus(
 
     /** Like YouTube Music's song menu: a mix that starts with this song, or add it to a playlist. */
     private fun songOptionsMenu(songId: Long): List<MenuEntry> {
-        val song = songsById[songId] ?: return emptyList()
+        val song = findSong(songId) ?: return emptyList()
         return listOf(
             MenuEntry("Start Mix", detail = "Songs that go with this one") { startMix(song) },
-            MenuEntry("Add to Playlist…", opensSubmenu = true) { navigation.open(Page.AddToPlaylist(songId)) },
+            if (song.isStreamed) {
+                MenuEntry("Download", detail = "Save it to your library") { downloadSong(song) }
+            } else {
+                MenuEntry("Add to Playlist…", opensSubmenu = true) { navigation.open(Page.AddToPlaylist(songId)) }
+            },
         )
     }
+
+    // --- For You ---
+
+    /** Today's picks: a status row while loading (or if offline), Play All, the songs, New Picks. */
+    private fun forYouMenu() = buildList {
+        val list = forYou.songs
+        when {
+            forYou.loading -> add(MenuEntry("Finding new songs…", detail = "From the songs you play most") {})
+            forYou.problem != null -> add(MenuEntry(forYou.problem, detail = "Select to try again") { refreshForYou(false) })
+        }
+        if (list.isNotEmpty()) {
+            add(MenuEntry("Play All", detail = "${plural(list.size, "song")} · streaming") { playAll(list) })
+            list.forEachIndexed { index, song ->
+                add(
+                    MenuEntry(
+                        song.title,
+                        detail = song.artist,
+                        song = song,
+                        onLongPress = { navigation.open(Page.SongOptions(song.id)) },
+                    ) { playAll(list, startIndex = index) }
+                )
+            }
+            if (!forYou.loading) add(MenuEntry("New Picks", detail = "Different songs, right now") { refreshForYou(true) })
+        }
+    }
+
+    /** A song by id: from the library, or a streamed one we're showing (For You, Now Playing). */
+    private fun findSong(id: Long): Song? =
+        songsById[id] ?: forYou.songs.firstOrNull { it.id == id } ?: currentSong?.takeIf { it.id == id }
 
     private fun addToPlaylistMenu(songId: Long): List<MenuEntry> {
         val song = songsById[songId] ?: return emptyList()

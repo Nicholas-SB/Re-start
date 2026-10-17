@@ -13,6 +13,9 @@ sealed interface Page {
     data object MainMenu : Page
     data object Music : Page
     data object Songs : Page
+
+    /** New songs from YouTube Music, picked from what you play most. */
+    data object ForYou : Page
     data object Stats : Page
     data object Download : Page
 
