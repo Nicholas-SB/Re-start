@@ -1,5 +1,8 @@
 package io.github.nicholas_sb.restart.ui.device
 
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.animation.Crossfade
 import android.os.SystemClock
 import androidx.compose.animation.core.animateFloatAsState
@@ -31,7 +34,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import android.content.Context
 import android.graphics.Bitmap
 import android.media.AudioManager
-import android.os.Build
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -56,7 +58,6 @@ import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.asImageBitmap
@@ -95,6 +96,7 @@ fun DeviceNowPlaying(
     volumeBar: VolumeBarState,
     coverStyle: CoverStyle,
     discAngle: () -> Float,  // from rememberDiscAngle, kept by the whole app
+    nextSong: Song?,  // the song after this one, to load its cover ahead of time
     onSeek: (Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -115,13 +117,21 @@ fun DeviceNowPlaying(
     // The last cover loaded is kept until the next one is ready, so the background can fade
     // from one to the other instead of going blank in between.
     var backdrop by remember { mutableStateOf<Bitmap?>(null) }
-    LaunchedEffect(song.id) { backdrop = artLoader.load(song) }
+    LaunchedEffect(song.id) { backdrop = artLoader.loadBackdrop(song) }
+
+    // The next song's cover, loaded ahead of time: its disc then slides in with the picture
+    // already there, instead of it popping in halfway through the slide.
+    LaunchedEffect(nextSong?.id) {
+        nextSong?.let { upcoming ->
+            artLoader.load(upcoming, AlbumArtLoader.LARGE_SIZE_PX)
+            artLoader.loadBackdrop(upcoming)
+        }
+    }
     val lyricsFound = showLyrics && lyricsState is LyricsState.Found
 
     Box(modifier = modifier.fillMaxSize()) {
-        // Modifier.blur only works on Android 12+; without it the picture would be sharp
-        // and distracting, so older phones simply keep the plain cream screen.
-        if (!lyricsFound && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        // A soft wash of the cover's colours: a tiny pre-blurred copy (see loadBackdrop), faded.
+        if (!lyricsFound) {
             // Crossfade: the new song's background fades in while the old one fades out.
             Crossfade(targetState = backdrop, animationSpec = motionSpec(BACKDROP_FADE_MS), modifier = Modifier.matchParentSize(), label = "backdrop") { art ->
                 if (art != null) {
@@ -129,7 +139,8 @@ fun DeviceNowPlaying(
                         bitmap = art.asImageBitmap(),
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize().blur(40.dp).alpha(0.35f),
+                        filterQuality = FilterQuality.High,  // stretches the tiny picture smoothly
+                        modifier = Modifier.fillMaxSize().alpha(0.35f),
                     )
                 }
             }
@@ -215,7 +226,12 @@ private fun SongInfo(
                 // screen's frame, which clips them.
                 .using(SizeTransform(clip = false))
         },
-        modifier = modifier.fillMaxWidth(),
+        // One description for the whole area. Accessibility services (TalkBack, but also
+        // password managers' autofill) otherwise get told about every text moving, on every
+        // frame of the slide, which kept the main thread busy and made the slide stutter.
+        modifier = modifier.fillMaxWidth().clearAndSetSemantics {
+            contentDescription = "${song.title}, ${song.artist}"
+        },
         label = "song",
     ) { shown ->
         SongDetails(shown.song, artLoader, coverStyle, discAngle, note)

@@ -34,7 +34,9 @@ fun SongArt(
 ) {
     // produceState runs the block in a coroutine and turns its result into UI state.
     // Keyed on song.id: if this slot is reused for another song, it loads again.
-    val art by produceState<Bitmap?>(initialValue = null, song.id, sizePx) {
+    // It starts with the cover if that's already loaded, so it's there from the first frame
+    // (instead of the placeholder for a frame, then everything drawn again with the cover).
+    val art by produceState(initialValue = artLoader.cached(song, sizePx), song.id, sizePx) {
         value = artLoader.load(song, sizePx)
     }
 

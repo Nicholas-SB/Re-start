@@ -1,5 +1,11 @@
 package io.github.nicholas_sb.restart.ui
 
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.Dispatchers
+import androidx.media3.common.Timeline
+import android.os.Looper
+import android.os.Handler
 import android.os.Bundle
 import io.github.nicholas_sb.restart.playback.SleepTimerCommand
 import android.app.Application
@@ -48,10 +54,31 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private val _sleepTimer = MutableStateFlow<SleepTimer?>(null)
     val sleepTimer: StateFlow<SleepTimer?> = _sleepTimer.asStateFlow()
 
+    // A skip sets off a burst of player events (new song, buffering, ready, playing, ...).
+    // Rebuilding the state for each one rebuilt the screen 6-8 times in a row and made the
+    // disc stutter, so the burst is gathered into one update that runs just after it.
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var updatePending = false
+    private var queueChanged = true  // only then does Up Next need rebuilding (it's the slow part)
+    private var updateJob: Job? = null
+
     private val listener = object : Player.Listener {
-        // One callback for every kind of change; we just re-read what we show.
+        override fun onTimelineChanged(timeline: Timeline, reason: Int) {
+            // Only when songs were added, removed or moved. The other reason ("source update")
+            // comes with every song that starts, when its length becomes known.
+            if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) queueChanged = true
+        }
+
         override fun onEvents(player: Player, events: Player.Events) {
-            updateState(player)
+            if (events.containsAny(Player.EVENT_MEDIA_ITEM_TRANSITION, Player.EVENT_SHUFFLE_MODE_ENABLED_CHANGED)) {
+                queueChanged = true
+            }
+            if (updatePending) return
+            updatePending = true
+            mainHandler.postDelayed({
+                updatePending = false
+                updateState(player)
+            }, GATHER_EVENTS_MS)
         }
     }
 
@@ -102,7 +129,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private fun updateState(player: Player) {
-        _uiState.value = PlayerUiState(
+        // Read everything from the player now (it may only be asked on this thread)...
+        val state = PlayerUiState(
             currentSongId = player.currentMediaItem?.mediaId?.toLongOrNull(),
             isPlaying = player.isPlaying,
             shuffleEnabled = player.shuffleModeEnabled,
@@ -111,28 +139,48 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 Player.REPEAT_MODE_ONE -> RepeatMode.ONE
                 else -> RepeatMode.OFF
             },
-            upNext = buildUpNext(player),
+            upNext = _uiState.value.upNext,
             queueSize = player.mediaItemCount,
             currentStreamedSong = player.currentMediaItem?.toStreamedSong(),
         )
         _positionMs.value = player.currentPosition
+
+        // ...but walk the queue for Up Next on a background thread: with a long queue that
+        // takes several milliseconds, enough to make the screen miss a frame. A Timeline is
+        // read-only, so the other thread can safely read it. If an update is still on its way,
+        // this one replaces it (and redoes its Up Next, if it had one to do).
+        val rebuildUpNext = queueChanged || updateJob?.isActive == true
+        queueChanged = false
+        updateJob?.cancel()
+        if (!rebuildUpNext) {
+            _uiState.value = state
+            return
+        }
+        val timeline = player.currentTimeline
+        val currentIndex = player.currentMediaItemIndex
+        val shuffle = player.shuffleModeEnabled
+        updateJob = viewModelScope.launch {
+            val upNext = withContext(Dispatchers.Default) { buildUpNext(timeline, currentIndex, shuffle) }
+            _uiState.value = state.copy(upNext = upNext)
+        }
     }
 
     /**
      * Lists the songs after the current one in the order they'll actually play.
      * The player's "timeline" knows the next index, taking shuffle into account.
      */
-    private fun buildUpNext(player: Player): List<QueueEntry> {
-        val timeline = player.currentTimeline
+    private fun buildUpNext(timeline: Timeline, currentIndex: Int, shuffle: Boolean): List<QueueEntry> {
         if (timeline.isEmpty) return emptyList()
 
         val upNext = mutableListOf<QueueEntry>()
-        var index = timeline.getNextWindowIndex(player.currentMediaItemIndex, Player.REPEAT_MODE_OFF, player.shuffleModeEnabled)
+        val window = Timeline.Window()  // reused for each song, filled in by getWindow
+        var index = timeline.getNextWindowIndex(currentIndex, Player.REPEAT_MODE_OFF, shuffle)
         while (index != C.INDEX_UNSET) {
-            val item = player.getMediaItemAt(index)
+            val item = timeline.getWindow(index, window).mediaItem
             val songId = item.mediaId.toLongOrNull()
-            if (songId != null) upNext += QueueEntry(index, songId, item.toStreamedSong())
-            index = timeline.getNextWindowIndex(index, Player.REPEAT_MODE_OFF, player.shuffleModeEnabled)
+            // Only streamed songs (negative ids) need their details read back from the item.
+            if (songId != null) upNext += QueueEntry(index, songId, if (songId < 0) item.toStreamedSong() else null)
+            index = timeline.getNextWindowIndex(index, Player.REPEAT_MODE_OFF, shuffle)
         }
         return upNext
     }
@@ -261,7 +309,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     // Disconnect from the service. This does NOT stop the music; the service keeps playing.
     override fun onCleared() {
+        mainHandler.removeCallbacksAndMessages(null)  // a gathered update still waiting
         controller?.removeListener(listener)
         MediaController.releaseFuture(controllerFuture)
     }
 }
+
+/** How long to wait for the rest of a burst of player events before updating the screen. */
+private const val GATHER_EVENTS_MS = 30L

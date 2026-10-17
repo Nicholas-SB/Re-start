@@ -397,7 +397,10 @@ fun RestartApp(
         navigation = navigation,
         player = playerViewModel,
         playlistActions = playlistViewModel,
-        stats = stats,
+        // Passed as functions so only the Stats/History pages read them. Compose rebuilds
+        // whatever read a value when it changes, and a play is counted on every skip: read
+        // here, the whole screen was rebuilt mid-slide (the stutter on next/previous).
+        stats = { stats },
         settings = settings,
         musicFolder = musicFolder,
         folderChoices = folderChoices,
@@ -411,8 +414,8 @@ fun RestartApp(
         },
         shufflePlaylist = ::shufflePlaylist,
         searchQuery = searchQuery,
-        months = months,
-        monthDetail = monthDetail,
+        months = { months },
+        monthDetail = { monthDetail },
         sleepTimer = sleepTimer,
         setSleepTimer = playerViewModel::setSleepTimer,
         backUpNow = { saveBackup.launch("Re-start backup ${LocalDate.now()}.json") },
@@ -598,6 +601,7 @@ fun RestartApp(
                                         volumeBar = volumeBar,
                                         coverStyle = settings.coverStyle,
                                         discAngle = discAngle,
+                                        nextSong = playerState.upNext.firstOrNull()?.let { songsById[it.songId] ?: it.streamedSong },
                                         onSeek = playerViewModel::seekTo,
                                     )
                                     Page.Download -> DownloadScreen(

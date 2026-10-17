@@ -39,7 +39,8 @@ class DeviceMenus(
     private val navigation: DeviceNavigationViewModel,
     private val player: PlayerViewModel,
     private val playlistActions: PlaylistViewModel,
-    private val stats: Map<String, SongStatsEntity>,
+    // Functions, so they're only read by the pages that show them (see RestartApp).
+    private val stats: () -> Map<String, SongStatsEntity>,
     private val settings: DeviceSettings,
     private val musicFolder: String,
     private val folderChoices: List<FolderChoice>,
@@ -50,8 +51,8 @@ class DeviceMenus(
     private val startNameEntry: (page: Page.NameEntry, initialText: String) -> Unit,
     private val shufflePlaylist: (playlistId: Long) -> Unit,
     private val searchQuery: String,
-    private val months: List<MonthSummary>,
-    private val monthDetail: MonthDetail?,
+    private val months: () -> List<MonthSummary>,
+    private val monthDetail: () -> MonthDetail?,
     private val sleepTimer: SleepTimer?,
     private val setSleepTimer: (minutes: Int) -> Unit,
     private val backUpNow: () -> Unit,
@@ -198,7 +199,7 @@ class DeviceMenus(
 
     /** Totals first, then the most played songs (choosing one plays that top list). */
     private fun statsMenu(): List<MenuEntry> {
-        val all = stats.values
+        val all = stats().values
         val mostPlayed = all
             .filter { it.playCount > 0 && it.songFileName in songsByFileName }
             .sortedByDescending { it.playCount }
@@ -230,7 +231,7 @@ class DeviceMenus(
 
     /** Every month with listening, newest first. */
     private fun historyMenu(): List<MenuEntry> =
-        months.map { summary ->
+        months().map { summary ->
             val listened = if (summary.listenedMs > 0) " · ${formatListeningTime(summary.listenedMs)}" else ""
             MenuEntry(summary.month.format(monthTitle), detail = plural(summary.plays, "play") + listened, opensSubmenu = true) {
                 navigation.open(Page.Month(summary.month.toString()))
@@ -239,7 +240,7 @@ class DeviceMenus(
 
     /** One month: totals, the busiest day, then the top songs (playable) and top artists. */
     private fun monthMenu(month: YearMonth): List<MenuEntry> {
-        val detail = monthDetail?.takeIf { it.month == month } ?: return listOf(MenuEntry("Loading…") {})
+        val detail = monthDetail()?.takeIf { it.month == month } ?: return listOf(MenuEntry("Loading…") {})
         // The top songs as Songs: from the library, or streamed again; songs deleted since are left out.
         val songs = detail.topSongs.map { count ->
             if (count.key.startsWith(STREAM_KEY_PREFIX)) {

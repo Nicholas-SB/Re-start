@@ -1,5 +1,12 @@
 package io.github.nicholas_sb.restart.playback
 
+import android.os.Handler
+import android.os.HandlerThread
+import java.util.concurrent.FutureTask
+import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.android.asCoroutineDispatcher
+import androidx.media3.session.CacheBitmapLoader
+import androidx.media3.datasource.DataSourceBitmapLoader
 import java.time.LocalDate
 import android.os.Bundle
 import androidx.media3.session.SessionCommand
@@ -64,6 +71,24 @@ class PlaybackService : MediaSessionService() {
     // `lateinit`: assigned in onCreate() rather than in the constructor, but never null after.
     private lateinit var player: ExoPlayer
 
+    // The player and the media session run on a thread of their own, not the main thread.
+    // On the main thread (which also draws the screen), the work they do on every song change
+    // (tens of milliseconds) held up the screen and made the disc stutter. Everything that
+    // touches the player has to happen on this thread: `onPlayerThread { }` sends it there.
+    private val playerThread = HandlerThread("Player").apply { start() }
+    private val playerHandler = Handler(playerThread.looper)
+
+    private fun onPlayerThread(block: () -> Unit) {
+        playerHandler.post(block)
+    }
+
+    /** Runs [block] on the player's thread and waits for it (only for creating and closing down). */
+    private fun onPlayerThreadAndWait(block: () -> Unit) {
+        val task = FutureTask(block, Unit)
+        playerHandler.post(task)
+        task.get(5, TimeUnit.SECONDS)  // rethrows anything that went wrong in there
+    }
+
     /**
      * Makes a fresh Fisher-Yates shuffle (current song first) whenever shuffle is turned on
      * or a new queue starts playing while shuffle is on.
@@ -120,7 +145,7 @@ class PlaybackService : MediaSessionService() {
 
     // Kept in a field: SharedPreferences only holds a weak reference to its listeners.
     private val batterySaverSwitch = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-        if (key == KEY_AUDIO_OFFLOAD) applyBatterySaver()
+        if (key == KEY_AUDIO_OFFLOAD) onPlayerThread { applyBatterySaver() }
     }
 
     @OptIn(UnstableApi::class)
@@ -155,7 +180,8 @@ class PlaybackService : MediaSessionService() {
     // --- Sleep timer ---
     // It lives here rather than in the screen, so it keeps counting with the app swiped away.
 
-    private val sleepScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    // Its coroutines run on the player's thread, since they turn the player's volume down.
+    private val sleepScope = CoroutineScope(SupervisorJob() + playerHandler.asCoroutineDispatcher())
     private var sleepJob: Job? = null
 
     /** [minutes] until the music stops; 0 turns the timer off; END_OF_SONG stops after this song. */
@@ -322,8 +348,9 @@ class PlaybackService : MediaSessionService() {
             // an anonymous class like `new TelephonyCallback() implements CallStateListener`.
             object : TelephonyCallback(), TelephonyCallback.CallStateListener {
                 override fun onCallStateChanged(state: Int) = this@PlaybackService.onCallStateChanged(state)
-            }.also { telephony.registerTelephonyCallback(mainExecutor, it) }
+            }.also { telephony.registerTelephonyCallback(playerHandler::post, it) }
         } else {
+            // Calls back on the thread that creates it: the player's (watchCalls runs there).
             @Suppress("DEPRECATION")  // the pre-Android 12 way
             object : PhoneStateListener() {
                 @Deprecated("Deprecated in Java")
@@ -349,10 +376,14 @@ class PlaybackService : MediaSessionService() {
         player.setShuffleOrder(FisherYatesShuffleOrder(player.mediaItemCount, player.currentMediaItemIndex))
     }
 
-    @OptIn(UnstableApi::class)  // DefaultMediaSourceFactory with our own data source
     override fun onCreate() {
         super.onCreate()
+        // Waits, so the session exists before anyone asks for it (onGetSession).
+        onPlayerThreadAndWait { createPlayerAndSession() }
+    }
 
+    @OptIn(UnstableApi::class)  // DefaultMediaSourceFactory with our own data source
+    private fun createPlayerAndSession() {
         player = ExoPlayer.Builder(this)
             .setMediaSourceFactory(DefaultMediaSourceFactory(streamingDataSource()))
             // Tell Android this is music, and let ExoPlayer manage "audio focus":
@@ -369,6 +400,7 @@ class PlaybackService : MediaSessionService() {
             .setHandleAudioBecomingNoisy(true)
             // Keep the CPU awake while playing with the screen off.
             .setWakeMode(C.WAKE_MODE_LOCAL)
+            .setLooper(playerThread.looper)  // the player's own thread (see playerThread)
             .build()
         player.addListener(reshuffleListener)
         player.addListener(statsListener)
@@ -380,6 +412,9 @@ class PlaybackService : MediaSessionService() {
 
         mediaSession = MediaSession.Builder(this, player)
             .setSessionActivity(openAppIntent())
+            // Covers for the notification and lock screen, at most 512 px: handing Android the
+            // full picture (often 1280 x 720) on every song change is needless work.
+            .setBitmapLoader(CacheBitmapLoader(DataSourceBitmapLoader.Builder(this).setMaximumOutputDimension(512).build()))
             .setCallback(sessionCallback)
             .build()
         watchCalls()
@@ -390,21 +425,26 @@ class PlaybackService : MediaSessionService() {
 
     /** The user swiped the app away from Recents: keep playing music, but quit if paused. */
     override fun onTaskRemoved(rootIntent: Intent?) {
-        if (!player.playWhenReady || player.mediaItemCount == 0) {
-            stopSelf()
+        onPlayerThread {
+            if (!player.playWhenReady || player.mediaItemCount == 0) {
+                stopSelf()
+            }
         }
     }
 
     override fun onDestroy() {
-        listeningTracker.songEnded(userSkipped = false)  // save the song that was playing
-        stopWatchingCalls()
-        sleepScope.cancel()
         settingsPrefs.unregisterOnSharedPreferenceChangeListener(batterySaverSwitch)
-        player.removeListener(reshuffleListener)
-        player.removeListener(statsListener)
-        player.release()
-        mediaSession?.release()
-        mediaSession = null
+        onPlayerThreadAndWait {
+            listeningTracker.songEnded(userSkipped = false)  // save the song that was playing
+            stopWatchingCalls()
+            sleepScope.cancel()
+            player.removeListener(reshuffleListener)
+            player.removeListener(statsListener)
+            player.release()
+            mediaSession?.release()
+            mediaSession = null
+        }
+        playerThread.quitSafely()
         super.onDestroy()
     }
 

@@ -26,6 +26,54 @@ class AlbumArtLoader(private val context: Context) {
         override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount / 1024
     }
 
+    /**
+     * A tiny, already blurred copy of the cover for Now Playing's background. Blurring once,
+     * here (a 32 px picture, stretched smoothly when drawn), is far cheaper than blurring the
+     * full picture on every frame while the disc spins, and works on every Android version.
+     */
+    suspend fun loadBackdrop(song: Song): Bitmap? {
+        val key = "${song.id}@backdrop"
+        cache.get(key)?.let { return it }
+        val cover = load(song) ?: return null
+        val backdrop = withContext(Dispatchers.Default) {
+            boxBlur(Bitmap.createScaledBitmap(cover, BACKDROP_SIZE_PX, BACKDROP_SIZE_PX, true), radius = 3)
+        }
+        cache.put(key, backdrop)
+        return backdrop
+    }
+
+    /**
+     * Blurs a small picture by averaging each pixel with its neighbours (a "box blur"), across
+     * and then down. Fine for 32 x 32 pixels; far too slow for a big picture.
+     */
+    private fun boxBlur(source: Bitmap, radius: Int): Bitmap {
+        val width = source.width
+        val height = source.height
+        val pixels = IntArray(width * height).also { source.getPixels(it, 0, width, 0, 0, width, height) }
+
+        fun pass(input: IntArray, horizontal: Boolean): IntArray {
+            val output = IntArray(input.size)
+            for (y in 0 until height) for (x in 0 until width) {
+                var r = 0; var g = 0; var b = 0; var count = 0
+                for (d in -radius..radius) {
+                    val nx = if (horizontal) (x + d).coerceIn(0, width - 1) else x
+                    val ny = if (horizontal) y else (y + d).coerceIn(0, height - 1)
+                    val p = input[ny * width + nx]
+                    r += (p shr 16) and 0xFF; g += (p shr 8) and 0xFF; b += p and 0xFF
+                    count++
+                }
+                output[y * width + x] = (0xFF shl 24) or ((r / count) shl 16) or ((g / count) shl 8) or (b / count)
+            }
+            return output
+        }
+
+        val blurred = pass(pass(pixels, horizontal = true), horizontal = false)
+        return Bitmap.createBitmap(blurred, width, height, Bitmap.Config.ARGB_8888)
+    }
+
+    /** The cover if it's already loaded (no waiting), else null. */
+    fun cached(song: Song, sizePx: Int = SMALL_SIZE_PX): Bitmap? = cache.get("${song.id}@$sizePx")
+
     /** Returns the song's cover art about [sizePx] pixels wide, or null if the file has none. */
     suspend fun load(song: Song, sizePx: Int = SMALL_SIZE_PX): Bitmap? {
         val key = "${song.id}@$sizePx"
@@ -107,5 +155,6 @@ class AlbumArtLoader(private val context: Context) {
     companion object {
         const val SMALL_SIZE_PX = 256
         const val LARGE_SIZE_PX = 1024
+        private const val BACKDROP_SIZE_PX = 32
     }
 }
