@@ -42,6 +42,7 @@ class DownloadQueue private constructor(private val context: Context) {
 
     private val downloader = SongDownloader(context)
     private val lrclib = LrclibClient()
+    private val youtube = YoutubeMusic(context)
 
     // Our own scope instead of viewModelScope: it lives as long as the app's process.
     // SupervisorJob: one failed download doesn't cancel the others.
@@ -110,7 +111,15 @@ class DownloadQueue private constructor(private val context: Context) {
 
                 // One card per song, listed right under the playlist's card, in order.
                 val songJobs = playlist.songs.map { song ->
-                    DownloadJob(id = nextId++, url = link.songUrl(song.videoId), title = song.title, playlistName = playlistName)
+                    DownloadJob(
+                        id = nextId++,
+                        url = link.songUrl(song.videoId),
+                        title = song.title,
+                        playlistName = playlistName,
+                        artist = song.artist,
+                        playlistId = playlistId,
+                        importId = importJob.id,
+                    )
                 }
                 _jobs.update { jobs ->
                     val at = jobs.indexOfFirst { it.id == importJob.id } + 1
@@ -160,6 +169,67 @@ class DownloadQueue private constructor(private val context: Context) {
                 _progress.update { it.copy(failedTitles = it.failedTitles + "Playlist: $message") }
             }
         }
+    }
+
+    /**
+     * For a song that failed (often "Video unavailable": removed, private or blocked where you
+     * are): looks for the same song on YouTube Music, by title and artist, and downloads that
+     * one instead, into the same playlist. Only a match with the same title and artist is taken,
+     * so it never swaps in a different song.
+     */
+    fun findSameSong(jobId: Int) {
+        val job = _jobs.value.firstOrNull { it.id == jobId } ?: return
+        val title = job.title ?: return
+        if (job.status !is DownloadStatus.Failed) return
+        val failedVideoId = videoIdIn.find(job.url)?.groupValues?.get(1)
+        launchTask {
+            songsQueued(1)
+            setStatus(job.id, DownloadStatus.Preparing("Looking for the same song…"))
+            _progress.update { it.copy(currentStep = "Looking for $title…") }
+            val found = try {
+                youtube.findSong(title, job.artist)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                null
+            }
+            val guess = PlaylistSong(failedVideoId.orEmpty(), title, job.artist)
+            val match = found?.takeIf { it.videoId != failedVideoId && compareSongs(guess, it) != SongMatch.DIFFERENT }
+            if (match == null) {
+                val why = when {
+                    job.artist == null -> "Couldn't search: the artist isn't known"
+                    found == null -> "Not found on YouTube Music"
+                    else -> "YouTube Music only has a different song (${found.title} · ${found.artist})"
+                }
+                setStatus(job.id, DownloadStatus.Failed(why))
+                songFinished(title, failed = true)
+                return@launchTask
+            }
+
+            val replacement = job.copy(url = "https://music.youtube.com/watch?v=${match.videoId}", title = match.title)
+            updateJob(job.id) { replacement }
+            val fileName = oneAtATime.withLock { run(replacement) }
+            val playlistId = job.playlistId
+            if (fileName != null && playlistId != null) {
+                val added = library?.addSong(playlistId, fileName) == true
+                job.importId?.let { importId -> countRecovered(importId, title, added) }
+            }
+            songFinished(title, failed = fileName == null)
+        }
+    }
+
+    /** A playlist's failed song was found after all: one fewer failed on the playlist's card. */
+    private fun countRecovered(importId: Int, title: String, added: Boolean) = updateJob(importId) { card ->
+        val progress = card.status as? DownloadStatus.PlaylistProgress ?: return@updateJob card
+        val failed = progress.failedTitles.toMutableList().apply { remove(title) }
+        card.copy(
+            status = progress.copy(
+                failedTitles = failed,
+                downloaded = progress.downloaded + 1,
+                added = progress.added + if (added) 1 else 0,
+                alreadyInPlaylist = progress.alreadyInPlaylist + if (added) 0 else 1,
+            )
+        )
     }
 
     /** Runs [block] as part of the current batch, starting a new batch (and the service) if idle. */
@@ -273,6 +343,9 @@ class DownloadQueue private constructor(private val context: Context) {
     }
 
     companion object {
+        /** The video id in a "watch?v=<id>" link. */
+        private val videoIdIn = Regex("[?&]v=([A-Za-z0-9_-]{11})")
+
         /** How Python (inside yt-dlp) says the connection is gone. */
         private val connectionErrors = listOf(
             "No address associated with hostname", "connection abort", "Network is unreachable", "Connection reset", "timed out",

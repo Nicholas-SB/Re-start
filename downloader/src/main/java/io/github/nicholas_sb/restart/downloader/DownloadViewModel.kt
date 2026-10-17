@@ -12,6 +12,11 @@ data class DownloadJob(
     val title: String? = null,  // known once the download finishes (or from the playlist)
     val status: DownloadStatus = DownloadStatus.Waiting,
     val playlistName: String? = null,  // for playlist imports: the playlist it goes into
+    // For playlist imports: the song's artist, the playlist's id, and the import's own card
+    // (all for "Find the same song" if this one fails).
+    val artist: String? = null,
+    val playlistId: Long? = null,
+    val importId: Int? = null,
 )
 
 sealed interface DownloadStatus {
@@ -60,6 +65,8 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
     fun download(url: String) = queue.download(url)
 
     fun importPlaylist(text: String, target: ImportTarget) = queue.importPlaylist(text, target)
+
+    fun findSameSong(jobId: Int) = queue.findSameSong(jobId)
 }
 
 /**

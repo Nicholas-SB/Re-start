@@ -106,7 +106,7 @@ fun DownloadScreen(
             Spacer(Modifier.height(16.dp))
         }
         items(jobs.filter { it.needsAttention() }, key = { it.id }) { job ->
-            DownloadJobCard(job)
+            DownloadJobCard(job, onFindSameSong = viewModel::findSameSong)
         }
     }
 }
@@ -172,7 +172,7 @@ fun PlaylistImportScreen(viewModel: DownloadViewModel, playlists: List<PlaylistC
             }
         }
         items(jobs.filter { it.needsAttention() }, key = { it.id }) { job ->
-            DownloadJobCard(job)
+            DownloadJobCard(job, onFindSameSong = viewModel::findSameSong)
         }
     }
 }
@@ -261,76 +261,97 @@ private fun SaveToMenu(playlists: List<PlaylistChoice>, chosen: PlaylistChoice?,
 }
 
 @Composable
-private fun DownloadJobCard(job: DownloadJob) {
-    // Tapping a failed one opens it on YouTube (or in the YouTube Music app), to see what's wrong.
+private fun DownloadJobCard(job: DownloadJob, onFindSameSong: (jobId: Int) -> Unit) {
+    // Tapping a failed one offers to open it on YouTube (to see what's wrong), or, when we know
+    // which song it was, to look for the same song on YouTube Music. Nothing happens by itself.
     val failed = job.status is DownloadStatus.Failed
+    val canSearch = failed && job.title != null && job.playlistId != null
     val uriHandler = LocalUriHandler.current
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(bottom = 8.dp)
-            .clip(CardDefaults.shape)  // so the tap ripple has the card's rounded corners
-            .clickable(enabled = failed) {
-                try {
-                    uriHandler.openUri(job.url)
-                } catch (e: Exception) {
-                    // No app on the phone can open web links: nothing to do.
-                }
-            },
-    ) {
-        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(
-                text = job.title ?: job.url,
-                style = MaterialTheme.typography.bodyLarge,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            job.playlistName?.let { playlistName ->
-                Text("→ $playlistName", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-            }
-            val status = job.status
-            Row(verticalAlignment = Alignment.CenterVertically) {
+    var showOptions by remember { mutableStateOf(false) }
+    fun openOnYoutube() {
+        try {
+            uriHandler.openUri(job.url)
+        } catch (e: Exception) {
+            // No app on the phone can open web links: nothing to do.
+        }
+    }
+    // A Box, so the options menu pops up anchored to the card.
+    Box {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 8.dp)
+                .clip(CardDefaults.shape)  // so the tap ripple has the card's rounded corners
+                .clickable(enabled = failed) { if (canSearch) showOptions = true else openOnYoutube() },
+        ) {
+            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
-                    text = when (status) {
-                        DownloadStatus.Waiting -> "Waiting…"
-                        is DownloadStatus.Preparing -> status.message
-                        is DownloadStatus.Downloading -> "Downloading… ${status.percent.toInt()}%"
-                        DownloadStatus.FindingLyrics -> "Looking for lyrics…"
-                        is DownloadStatus.Done -> {
-                            val song = if (status.alreadyInLibrary) "Already in your library" else "Done"
-                            val lyrics = when (status.lyrics) {
-                                LyricsOutcome.SAVED -> "lyrics saved"
-                                LyricsOutcome.ALREADY_THERE -> "already had lyrics"
-                                LyricsOutcome.NOT_FOUND -> "no lyrics found"
-                                LyricsOutcome.NOT_CHECKED -> null
-                            }
-                            listOfNotNull(song, lyrics).joinToString(" · ")
-                        }
-                        is DownloadStatus.Failed -> "Failed: ${status.message}"
-                        is DownloadStatus.PlaylistProgress ->
-                            if (status.finished < status.total) {
-                                "Into ${status.playlistName} · ${status.finished} of ${status.total} songs"
-                            } else {
-                                playlistSummary(status)
-                            }
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (status is DownloadStatus.Failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                    text = job.title ?: job.url,
+                    style = MaterialTheme.typography.bodyLarge,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                 )
-            }
-            if (failed) {
-                Text("Tap to open on YouTube", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            when (status) {
-                is DownloadStatus.Downloading ->
-                    LinearProgressIndicator(progress = { status.percent / 100f }, modifier = Modifier.fillMaxWidth())
-                is DownloadStatus.PlaylistProgress -> if (status.finished < status.total) {
-                    LinearProgressIndicator(progress = { status.finished / status.total.toFloat() }, modifier = Modifier.fillMaxWidth())
+                job.playlistName?.let { playlistName ->
+                    Text("→ $playlistName", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                 }
-                is DownloadStatus.Preparing, DownloadStatus.FindingLyrics, DownloadStatus.Waiting ->
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())  // no percentage: animated bar
-                else -> {}
+                val status = job.status
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = when (status) {
+                            DownloadStatus.Waiting -> "Waiting…"
+                            is DownloadStatus.Preparing -> status.message
+                            is DownloadStatus.Downloading -> "Downloading… ${status.percent.toInt()}%"
+                            DownloadStatus.FindingLyrics -> "Looking for lyrics…"
+                            is DownloadStatus.Done -> {
+                                val song = if (status.alreadyInLibrary) "Already in your library" else "Done"
+                                val lyrics = when (status.lyrics) {
+                                    LyricsOutcome.SAVED -> "lyrics saved"
+                                    LyricsOutcome.ALREADY_THERE -> "already had lyrics"
+                                    LyricsOutcome.NOT_FOUND -> "no lyrics found"
+                                    LyricsOutcome.NOT_CHECKED -> null
+                                }
+                                listOfNotNull(song, lyrics).joinToString(" · ")
+                            }
+                            is DownloadStatus.Failed -> "Failed: ${status.message}"
+                            is DownloadStatus.PlaylistProgress ->
+                                if (status.finished < status.total) {
+                                    "Into ${status.playlistName} · ${status.finished} of ${status.total} songs"
+                                } else {
+                                    playlistSummary(status)
+                                }
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (status is DownloadStatus.Failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (failed) {
+                    Text(
+                        if (canSearch) "Tap for options" else "Tap to open on YouTube",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                when (status) {
+                    is DownloadStatus.Downloading ->
+                        LinearProgressIndicator(progress = { status.percent / 100f }, modifier = Modifier.fillMaxWidth())
+                    is DownloadStatus.PlaylistProgress -> if (status.finished < status.total) {
+                        LinearProgressIndicator(progress = { status.finished / status.total.toFloat() }, modifier = Modifier.fillMaxWidth())
+                    }
+                    is DownloadStatus.Preparing, DownloadStatus.FindingLyrics, DownloadStatus.Waiting ->
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())  // no percentage: animated bar
+                    else -> {}
+                }
             }
+        }
+        DropdownMenu(expanded = showOptions, onDismissRequest = { showOptions = false }) {
+            DropdownMenuItem(text = { Text("Open on YouTube") }, onClick = {
+                showOptions = false
+                openOnYoutube()
+            })
+            DropdownMenuItem(text = { Text("Find the same song") }, onClick = {
+                showOptions = false
+                onFindSameSong(job.id)
+            })
         }
     }
 }
