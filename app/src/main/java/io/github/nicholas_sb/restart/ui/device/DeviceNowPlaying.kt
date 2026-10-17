@@ -1,13 +1,15 @@
 package io.github.nicholas_sb.restart.ui.device
 
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.shape.CircleShape
@@ -139,6 +141,8 @@ fun DeviceNowPlaying(
             } else {
                 SongInfo(
                     song = song,
+                    queuePosition = state.queuePosition,
+                    queueSize = state.queueSize,
                     artLoader = artLoader,
                     coverStyle = coverStyle,
                     discAngle = discAngle,
@@ -157,28 +161,49 @@ fun DeviceNowPlaying(
     }
 }
 
+/** A song on Now Playing and where it is in the play order (1 = first), to know which way to slide. */
+private data class ShownSong(val song: Song, val position: Int)
+
 /**
  * The cover as the star of the page (a spinning disc, or the plain square), with the song
- * centered underneath. When the song changes, the new one fades in over the old one.
+ * centered underneath.
+ *
+ * When the song changes, it works like a record changer: going forward (the song ended, or ⏭),
+ * the new disc slides in from the right while the old one slides out to the left; going back
+ * (⏮), the other way round. The discs disappear at the edge of the screen's frame.
  */
 @Composable
 private fun SongInfo(
     song: Song,
+    queuePosition: Int,
+    queueSize: Int,
     artLoader: AlbumArtLoader,
     coverStyle: CoverStyle,
-    discAngle: () -> Float,  // shared by the old and new song's disc, so a new song doesn't make it jump
+    discAngle: () -> Float,  // shared by the old and new song's disc, so both keep turning
     note: String?,
     modifier: Modifier = Modifier,
 ) {
-    val fade = motionSpec<Float>(300)
+    val slide = motionSpec<IntOffset>(SONG_SLIDE_MS)
     AnimatedContent(
-        targetState = song,
-        contentKey = { it.id },
-        transitionSpec = { fadeIn(fade) togetherWith fadeOut(fade) },
+        targetState = ShownSong(song, queuePosition),
+        contentKey = { it.song.id },
+        transitionSpec = {
+            val from = initialState.position
+            val to = targetState.position
+            // Forward, unless we moved back in the queue. Repeat-all going from the last song
+            // to the first counts as forward too.
+            val wrappedAround = from == queueSize && to == 1
+            val direction = if (to >= from || wrappedAround) 1 else -1
+            (slideInHorizontally(slide) { width -> direction * width } togetherWith
+                slideOutHorizontally(slide) { width -> -direction * width })
+                // Don't cut the discs off at this area's edge: they slide on until the
+                // screen's frame, which clips them.
+                .using(SizeTransform(clip = false))
+        },
         modifier = modifier.fillMaxWidth(),
         label = "song",
-    ) { shownSong ->
-        SongDetails(shownSong, artLoader, coverStyle, discAngle, note)
+    ) { shown ->
+        SongDetails(shown.song, artLoader, coverStyle, discAngle, note)
     }
 }
 
@@ -230,6 +255,9 @@ private fun SongDetails(song: Song, artLoader: AlbumArtLoader, coverStyle: Cover
         }
     }
 }
+
+/** How long a new song's disc takes to slide in. */
+private const val SONG_SLIDE_MS = 450
 
 /** One full turn of the disc takes this long (a slow, relaxed pace). */
 private const val DISC_TURN_MS = 16_000
