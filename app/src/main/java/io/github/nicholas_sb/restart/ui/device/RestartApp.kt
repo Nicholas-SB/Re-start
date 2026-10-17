@@ -1,5 +1,8 @@
 package io.github.nicholas_sb.restart.ui.device
 
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.currentStateAsState
 import android.content.Context
 import androidx.compose.runtime.mutableIntStateOf
 import io.github.nicholas_sb.restart.data.backup.Backup
@@ -266,6 +269,15 @@ fun RestartApp(
     }
 
     val sleepTimer by playerViewModel.sleepTimer.collectAsStateWithLifecycle()
+
+    // The disc on Now Playing. Its spin lives here, above all the pages, so it keeps turning
+    // while you browse other menus. It turns only while the app is on screen: leaving the app
+    // (home screen, screen off) lets it coast to a stop, and coming back starts it again.
+    val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
+    val discAngle = rememberDiscAngle(
+        spinning = playerState.isPlaying && settings.coverStyle == CoverStyle.DISC && lifecycleState.isAtLeast(Lifecycle.State.STARTED),
+        animate = settings.animations,
+    )
 
     // What's typed on the Search page (kept when you leave it, so coming back shows the results).
     var searchQuery by rememberSaveable { mutableStateOf("") }
@@ -535,6 +547,7 @@ fun RestartApp(
                                         showLyrics = showLyrics,
                                         volumeFraction = volumeFraction,
                                         coverStyle = settings.coverStyle,
+                                        discAngle = discAngle,
                                         onSeek = playerViewModel::seekTo,
                                     )
                                     Page.Download -> DownloadScreen(

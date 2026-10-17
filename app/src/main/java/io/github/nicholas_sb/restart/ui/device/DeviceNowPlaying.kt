@@ -82,6 +82,7 @@ fun DeviceNowPlaying(
     showLyrics: Boolean,
     volumeFraction: Float?,  // not null while the volume bar should show
     coverStyle: CoverStyle,
+    discAngle: () -> Float,  // from rememberDiscAngle, kept by the whole app
     onSeek: (Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -140,7 +141,7 @@ fun DeviceNowPlaying(
                     song = song,
                     artLoader = artLoader,
                     coverStyle = coverStyle,
-                    isPlaying = state.isPlaying,
+                    discAngle = discAngle,
                     note = if (showLyrics && lyricsState == LyricsState.NotFound) "No lyrics for this song" else null,
                     modifier = Modifier.weight(1f),
                 )
@@ -165,12 +166,10 @@ private fun SongInfo(
     song: Song,
     artLoader: AlbumArtLoader,
     coverStyle: CoverStyle,
-    isPlaying: Boolean,
+    discAngle: () -> Float,  // shared by the old and new song's disc, so a new song doesn't make it jump
     note: String?,
     modifier: Modifier = Modifier,
 ) {
-    // Shared by the old and new song's disc, so a new song doesn't make the disc jump.
-    val discAngle = rememberDiscAngle(spinning = isPlaying && coverStyle == CoverStyle.DISC)
     val fade = motionSpec<Float>(300)
     AnimatedContent(
         targetState = song,
@@ -232,20 +231,22 @@ private fun SongDetails(song: Song, artLoader: AlbumArtLoader, coverStyle: Cover
     }
 }
 
-/** One full turn of the disc takes this long (a lazy record-player pace). */
-private const val DISC_TURN_MS = 9_000
+/** One full turn of the disc takes this long (a slow, relaxed pace). */
+private const val DISC_TURN_MS = 16_000
 
 /**
  * The disc's angle, which keeps turning while [spinning]. Pausing lets it coast to a stop,
- * and playing again speeds it back up, like a real turntable. With animations off it doesn't
+ * and playing again speeds it back up, like a real turntable. Without [animate] it doesn't
  * move at all.
+ *
+ * RestartApp keeps this above all the pages, so the disc keeps turning while you're in other
+ * menus and is where you'd expect when you come back to Now Playing.
  *
  * Returns a function rather than the number: whoever draws reads it only in the drawing
  * phase (graphicsLayer), so the 60 updates a second redraw the disc without recomposing.
  */
 @Composable
-private fun rememberDiscAngle(spinning: Boolean): () -> Float {
-    val animate = LocalAnimations.current
+fun rememberDiscAngle(spinning: Boolean, animate: Boolean): () -> Float {
     val angle = remember { Animatable(0f) }
     LaunchedEffect(spinning, animate) {
         if (!animate) return@LaunchedEffect
