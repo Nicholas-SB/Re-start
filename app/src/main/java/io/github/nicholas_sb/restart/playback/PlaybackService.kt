@@ -124,6 +124,23 @@ class PlaybackService : MediaSessionService() {
         }
     }
 
+    /**
+     * When a song starts, looks up the audio links of the next streamed songs in the queue,
+     * so skipping to them (or reaching them) doesn't wait for a lookup.
+     */
+    private val prefetchNextStreams = object : Player.Listener {
+        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            val timeline = player.currentTimeline
+            var index = player.currentMediaItemIndex
+            repeat(STREAMS_TO_PREFETCH) {
+                index = timeline.getNextWindowIndex(index, player.repeatMode, player.shuffleModeEnabled)
+                if (index == C.INDEX_UNSET) return
+                val uri = player.getMediaItemAt(index).localConfiguration?.uri ?: return@repeat
+                if (uri.scheme == STREAM_SCHEME) youtube.prefetchAudioUrl(uri.host.orEmpty())
+            }
+        }
+    }
+
     /** A streamed song that can't play (no internet, removed from YouTube): skip to the next. */
     private val skipBrokenStreams = object : Player.Listener {
         override fun onPlayerError(error: PlaybackException) {
@@ -441,6 +458,7 @@ class PlaybackService : MediaSessionService() {
         player.addListener(skipBrokenStreams)
         player.addListener(sleepAtEndOfSong)
         player.addListener(recordChange)
+        player.addListener(prefetchNextStreams)
         player.addAudioOffloadListener(offloadLogger)
         applyBatterySaver()
         settingsPrefs.registerOnSharedPreferenceChangeListener(batterySaverSwitch)
@@ -497,6 +515,9 @@ private const val KEY_AUDIO_OFFLOAD = "audio_offload"
 
 /** Same key as DeviceSettings' "Record change" switch. */
 private const val KEY_RECORD_CHANGE = "record_change"
+
+/** How many of the next streamed songs get their audio links looked up ahead of time. */
+private const val STREAMS_TO_PREFETCH = 2
 
 /** The pause between songs, like putting another record on. */
 private const val RECORD_CHANGE_MS = 500L

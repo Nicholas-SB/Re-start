@@ -1,5 +1,6 @@
 package io.github.nicholas_sb.restart.ui.device
 
+import io.github.nicholas_sb.restart.downloader.YoutubeMusic
 import java.time.YearMonth
 import androidx.activity.result.IntentSenderRequest
 import io.github.nicholas_sb.restart.data.SongDeleter
@@ -432,6 +433,25 @@ fun RestartApp(
     )
     val entries = menus.entries(page)
 
+    // A streamed song that stays highlighted for a moment is probably about to be played:
+    // look up its audio link now, so it starts sooner when you press the center. ("Play All"
+    // on For You starts with the first song.)
+    val highlighted = entries.getOrNull(navigation.selectedIndex(page))
+    val highlightedStream = (highlighted?.song ?: forYou.songs.firstOrNull()?.takeIf { page == Page.ForYou })?.streamVideoId
+    val youtube = remember { YoutubeMusic(context) }
+    LaunchedEffect(highlightedStream) {
+        val videoId = highlightedStream ?: return@LaunchedEffect
+        delay(HIGHLIGHT_PREFETCH_DELAY_MS)  // just scrolling past: not worth a lookup
+        youtube.prefetchAudioUrl(videoId)
+    }
+    // Opening For You: the songs at the top are the likeliest to be played first.
+    val topForYou = if (page == Page.ForYou) forYou.songs.take(FOR_YOU_PREFETCH_COUNT).mapNotNull { it.streamVideoId } else emptyList()
+    LaunchedEffect(topForYou) {
+        if (topForYou.isEmpty()) return@LaunchedEffect
+        delay(HIGHLIGHT_PREFETCH_DELAY_MS)  // only if the page stays open a moment
+        topForYou.forEach(youtube::prefetchAudioUrl)
+    }
+
     fun saveName(namePage: Page.NameEntry) {
         val name = nameDraft.trim()
         if (name.isEmpty()) return
@@ -699,3 +719,9 @@ private fun StatusBarIcons() {
 }
 
 private const val KEY_LAST_BACKUP = "last_backup_at"
+
+/** How long a streamed song stays highlighted before its audio link is looked up. */
+private const val HIGHLIGHT_PREFETCH_DELAY_MS = 400L
+
+/** How many songs at the top of For You get their audio links looked up when it opens. */
+private const val FOR_YOU_PREFETCH_COUNT = 3

@@ -1,5 +1,11 @@
 package io.github.nicholas_sb.restart.downloader
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
 import android.content.Context
 import com.yausername.youtubedl_android.YoutubeDL
 import com.yausername.youtubedl_android.YoutubeDLRequest
@@ -105,13 +111,49 @@ class YoutubeMusic(context: Context) {
 
     /**
      * A link to stream [videoId]'s audio. YouTube's links stop working after some hours,
-     * so each is kept for 3 hours and then looked up again.
+     * so each is kept for 3 hours and then looked up again. Looking one up takes a few
+     * seconds (yt-dlp asks YouTube); if it's already being looked up (see [prefetchAudioUrl]),
+     * this waits for that answer instead of asking a second time.
      */
     suspend fun audioUrl(videoId: String): String {
         require(isVideoId(videoId))
-        streamLinks[videoId]?.let { (url, foundAt) ->
-            if (System.currentTimeMillis() - foundAt < LINK_LIFETIME_MS) return url
+        cachedAudioUrl(videoId)?.let { return it }
+        // One lookup per song at a time. computeIfAbsent: if none is running, start one.
+        val lookup = lookups.computeIfAbsent(videoId) {
+            lookupScope.async {
+                try {
+                    lookUpAudioUrl(videoId)
+                } finally {
+                    lookups.remove(videoId)
+                }
+            }
         }
+        return lookup.await()
+    }
+
+    /**
+     * Starts looking up [videoId]'s audio link in the background, so the song starts right
+     * away when it's played: for the next songs in the queue, or a song you're about to pick.
+     */
+    fun prefetchAudioUrl(videoId: String) {
+        if (!isVideoId(videoId) || cachedAudioUrl(videoId) != null) return
+        lookupScope.launch {
+            try {
+                audioUrl(videoId)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // No internet, or gone from YouTube: playing it will say so (and skip it).
+            }
+        }
+    }
+
+    private fun cachedAudioUrl(videoId: String): String? {
+        val (url, foundAt) = streamLinks[videoId] ?: return null
+        return url.takeIf { System.currentTimeMillis() - foundAt < LINK_LIFETIME_MS }
+    }
+
+    private suspend fun lookUpAudioUrl(videoId: String): String {
         downloader.prepare {}
         return withContext(Dispatchers.IO) {
             val request = YoutubeDLRequest("https://music.youtube.com/watch?v=$videoId").apply {
@@ -127,8 +169,13 @@ class YoutubeMusic(context: Context) {
     companion object {
         private const val LINK_LIFETIME_MS = 3 * 60 * 60 * 1000L
 
-        // Shared by everyone (the player asks from its own thread), hence a thread-safe map.
+        // Shared by everyone (the player asks from its own thread), hence thread-safe maps.
         private val streamLinks = ConcurrentHashMap<String, Pair<String, Long>>()
+        private val lookups = ConcurrentHashMap<String, Deferred<String>>()  // running right now
+
+        // Lookups run here, not in whoever asked: if the screen that asked goes away, the
+        // answer is still worth having for when the song plays.
+        private val lookupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
         /** Where a song's cover is on YouTube, biggest first (not every size exists for every video). */
         fun coverUrls(videoId: String): List<String> =
