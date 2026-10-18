@@ -9,41 +9,62 @@
   <img src="docs/screenshots/extras.png" width="200" alt="Extras">
 </p>
 
+## Controls
+
+| Do this | In a menu | On Now Playing |
+| --- | --- | --- |
+| Turn the wheel | Scroll (faster turns go further) | Change the volume |
+| Press the center | Select | Show synced lyrics |
+| Hold the center | Options for the highlighted item | Options for the song (Up Next, Start Mix, sleep timer…) |
+| Press MENU | Go back | Go back |
+| Press ⏮ / ⏭ | Previous / next song | Previous / next song |
+| Hold ⏮ / ⏭ | | Rewind / fast-forward |
+
+Every step gives a light vibration, with an optional click sound.
+
 ## Features
 
-**The wheel**
-- Turn it to scroll (faster turns go further), press the center to select, MENU to go back
-- On Now Playing, the wheel is the volume; hold ⏮ / ⏭ to rewind or fast-forward
-- Light vibration on every step, and an optional click sound
+### Now Playing
 
-**Now Playing**
-- The cover as a record that spins while the music plays, and slides away for the next song
-- Record change: a short pause between songs, like putting on another record (can be turned off)
-- The background takes the cover's colors and fades from song to song
-- All the animations turn off with one switch in Extras
+| Feature | What it does |
+| --- | --- |
+| Spinning record | The cover is a record that spins while the music plays, and slides away for the next song |
+| Record change | A short pause between songs, like putting on another record (can be turned off) |
+| Background | Takes the cover's colors and fades from song to song |
+| Animations | All of them turn off with one switch in Extras |
 
-**Your music**
-- Plays the songs in one folder of your choice (Music by default)
-- Playlists: create, rename, reorder, and pin your favorites to the main menu, where one press shuffles them
-- Search your songs, artists, albums and playlists
-- Synced lyrics: press the center on Now Playing (reads `.lrc` files next to your songs)
-- Shuffle, repeat, Up Next, and a sleep timer that fades the music out
-- Stats on what you play most, and your listening history month by month
-- Delete a song from the app (from your phone and every playlist)
-- Back up and restore your playlists, stats and settings to a file
-- Keeps playing in the background, with lock screen and headphone controls; can pause for phone calls even on silent
+### Your music
 
-**New music** (needs internet)
-- **Start Mix** on any song: like YouTube Music's "Start radio". Songs you have play from your phone, the others stream
-- **For You**: 30 new songs a day, picked from the radios of the songs you play most
-- **Download**: paste a YouTube or YouTube Music link to save a song, with its cover and synced lyrics (from [LRCLIB](https://lrclib.net)), or import a whole playlist into a new or existing one (songs you already have aren't downloaded again; for a song that fails, Re-start can look for the same song elsewhere)
+| Feature | What it does |
+| --- | --- |
+| Music folder | Plays the songs in one folder of your choice (Music by default) |
+| Playlists | Create, rename and reorder them; pin favorites to the main menu, where one press shuffles them |
+| Search | Your songs, artists, albums and playlists |
+| Lyrics | Synced lyrics from `.lrc` files next to your songs |
+| Playback | Shuffle, repeat, Up Next, and a sleep timer that fades the music out |
+| Stats | What you play most, and your listening history month by month |
+| Delete a song | From your phone and every playlist, from inside the app |
+| Backup | Save and restore your playlists, stats and settings to a file |
+| In the background | Lock screen and headphone controls; can pause for phone calls, even on silent |
+
+### New music (needs internet)
+
+| Feature | What it does |
+| --- | --- |
+| **Start Mix** | On any song, like YouTube Music's "Start radio". Songs you have play from your phone; the others stream |
+| **For You** | 30 new songs a day, picked from the radios of the songs you play most |
+| **Download** | Paste a YouTube or YouTube Music link to save a song, with its cover and synced lyrics (from [LRCLIB](https://lrclib.net)) |
+| **Import a playlist** | Into a new or existing playlist. Songs you already have aren't downloaded again; for a song that fails, Re-start can look for the same song elsewhere |
 
 ## Install
 
 Download the latest APK from the [Releases](../../releases) page and open it on your phone (Android will ask you to allow installing apps from your browser or file manager).
 
-- Android 7.0 or newer; downloading needs Android 10 or newer
-- The APK is large (it carries its own copy of Python, yt-dlp and ffmpeg for the downloader) and runs on 64-bit phones, which is nearly every phone from the last several years
+| Requirement | |
+| --- | --- |
+| Android version | 7.0 or newer (downloading needs 10 or newer) |
+| Phone | 64-bit, which is nearly every phone from the last several years |
+| Size | Large: the APK carries its own copy of Python, yt-dlp and ffmpeg for the downloader |
 
 ### First run
 
@@ -57,7 +78,12 @@ Download the latest APK from the [Releases](../../releases) page and open it on 
 2. Clone this repository and open the folder in Android Studio.
 3. Press **Run** with your phone connected (USB debugging on) or an emulator.
 
-From a terminal: `./gradlew assembleDebug` builds `app/build/outputs/apk/debug/app-debug.apk`, and `./gradlew testDebugUnitTest` runs the tests.
+From a terminal:
+
+| Command | What it does |
+| --- | --- |
+| `./gradlew assembleDebug` | Builds `app/build/outputs/apk/debug/app-debug.apk` |
+| `./gradlew testDebugUnitTest` | Runs the tests |
 
 ## How it's built
 
@@ -78,9 +104,11 @@ Downloading and streaming use [yt-dlp](https://github.com/yt-dlp/yt-dlp), which 
 
 ## Credits
 
-- [yt-dlp](https://github.com/yt-dlp/yt-dlp) and [youtubedl-android](https://github.com/yausername/youtubedl-android) (with ffmpeg) for downloading and streaming
-- [LRCLIB](https://lrclib.net) for synced lyrics
-- [Media3 / ExoPlayer](https://github.com/androidx/media), Jetpack Compose and Room by Google
+| Project | Used for |
+| --- | --- |
+| [yt-dlp](https://github.com/yt-dlp/yt-dlp) and [youtubedl-android](https://github.com/yausername/youtubedl-android) (with ffmpeg) | Downloading and streaming |
+| [LRCLIB](https://lrclib.net) | Synced lyrics |
+| [Media3 / ExoPlayer](https://github.com/androidx/media), Jetpack Compose and Room by Google | Playback, the interface, and the database |
 
 ## License
 
