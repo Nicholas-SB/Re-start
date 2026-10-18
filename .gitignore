@@ -27,3 +27,8 @@ local.properties
 
 # ...except the app's own tiny interface sounds (wheel clicks), which it needs to build.
 !app/src/main/res/raw/*.wav
+
+# The release signing key and its passwords: keep them private (and backed up)
+keystore.properties
+*.jks
+*.keystore

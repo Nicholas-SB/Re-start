@@ -43,7 +43,7 @@
 Download the latest APK from the [Releases](../../releases) page and open it on your phone (Android will ask you to allow installing apps from your browser or file manager).
 
 - Android 7.0 or newer; downloading needs Android 10 or newer
-- The APK is large (it carries its own copy of Python, yt-dlp and ffmpeg for the downloader) and works on every kind of Android processor
+- The APK is large (it carries its own copy of Python, yt-dlp and ffmpeg for the downloader) and runs on 64-bit phones, which is nearly every phone from the last several years
 
 ### First run
 

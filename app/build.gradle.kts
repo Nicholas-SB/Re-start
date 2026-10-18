@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -27,12 +29,30 @@ android {
         }
     }
 
+    // The key that signs the release APK. Its passwords live in keystore.properties, which
+    // is never committed (see .gitignore); without that file the release APK is unsigned.
+    val keystoreFile = rootProject.file("keystore.properties")
+    val releaseSigning = if (keystoreFile.exists()) {
+        val keystore = Properties().apply { keystoreFile.inputStream().use(::load) }
+        signingConfigs.create("release") {
+            storeFile = rootProject.file(keystore.getProperty("storeFile"))
+            storePassword = keystore.getProperty("storePassword")
+            keyAlias = keystore.getProperty("keyAlias")
+            keyPassword = keystore.getProperty("keyPassword")
+        }
+    } else {
+        null
+    }
+
     buildTypes {
         release {
+            signingConfig = releaseSigning
+            // R8: shrinks and optimizes all the code. (Optimizing only some packages left
+            // Kotlin's own classes inaccessible to the rest, and the app crashed at start.)
             optimization {
                 enable = true
-                packageScope = setOf("androidx.**", "kotlin.**", "kotlinx.**")
             }
+            proguardFiles("proguard-rules.pro")
         }
     }
     compileOptions {
