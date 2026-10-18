@@ -178,18 +178,21 @@ class PlaybackService : MediaSessionService() {
     }
 
     // --- Changing records ---
-    // Pressing next/previous (or picking a song in Up Next) stops for half a second before the
-    // new song plays, like putting another record on. A switch in Extras turns it off.
+    // Moving to another song (it ended, or next/previous, or picked in Up Next) stops for half
+    // a second before the new song plays, like putting another record on. A switch in Extras
+    // turns it off.
 
     private var resumeAfterRecordChange: Runnable? = null
 
     private val recordChange = object : Player.Listener {
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-            // SEEK: you moved to another song. (A song ending by itself goes straight on.)
-            if (reason != Player.MEDIA_ITEM_TRANSITION_REASON_SEEK) return
+            // SEEK: you moved to another song. AUTO: the last one ended. (Not REPEAT: the same
+            // song again stays on the turntable.)
+            if (reason != Player.MEDIA_ITEM_TRANSITION_REASON_SEEK && reason != Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) return
             if (!settingsPrefs.getBoolean(KEY_RECORD_CHANGE, true)) return
             val waiting = resumeAfterRecordChange
-            if (!player.playWhenReady && waiting == null) return  // paused: nothing to wait for
+            // Paused (also when the sleep timer stopped at the end of a song): nothing to wait for.
+            if (!player.playWhenReady && waiting == null) return
             // Skipping again while still waiting: wait again, from now.
             waiting?.let(playerHandler::removeCallbacks)
             player.pause()
@@ -495,7 +498,7 @@ private const val KEY_AUDIO_OFFLOAD = "audio_offload"
 /** Same key as DeviceSettings' "Record change" switch. */
 private const val KEY_RECORD_CHANGE = "record_change"
 
-/** The pause between songs when you skip, like putting another record on. */
+/** The pause between songs, like putting another record on. */
 private const val RECORD_CHANGE_MS = 500L
 
 /** How long the music fades out before the sleep timer pauses it. */
