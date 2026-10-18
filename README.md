@@ -16,17 +16,27 @@
 - On Now Playing, the wheel is the volume; hold ⏮ / ⏭ to rewind or fast-forward
 - Light vibration on every step, and an optional click sound
 
+**Now Playing**
+- The cover as a record that spins while the music plays, and slides away for the next song
+- Record change: a short pause between songs, like putting on another record (can be turned off)
+- The background takes the cover's colors and fades from song to song
+- All the animations turn off with one switch in Extras
+
 **Your music**
 - Plays the songs in one folder of your choice (Music by default)
 - Playlists: create, rename, reorder, and pin your favorites to the main menu, where one press shuffles them
+- Search your songs, artists, albums and playlists
 - Synced lyrics: press the center on Now Playing (reads `.lrc` files next to your songs)
-- Shuffle, repeat, Up Next, and stats on what you play most
+- Shuffle, repeat, Up Next, and a sleep timer that fades the music out
+- Stats on what you play most, and your listening history month by month
+- Delete a song from the app (from your phone and every playlist)
+- Back up and restore your playlists, stats and settings to a file
 - Keeps playing in the background, with lock screen and headphone controls; can pause for phone calls even on silent
 
 **New music** (needs internet)
 - **Start Mix** on any song: like YouTube Music's "Start radio". Songs you have play from your phone, the others stream
 - **For You**: 30 new songs a day, picked from the radios of the songs you play most
-- **Download**: paste a YouTube or YouTube Music link to save a song, with its cover and synced lyrics (from [LRCLIB](https://lrclib.net)), or import a whole playlist
+- **Download**: paste a YouTube or YouTube Music link to save a song, with its cover and synced lyrics (from [LRCLIB](https://lrclib.net)), or import a whole playlist into a new or existing one (songs you already have aren't downloaded again; for a song that fails, Re-start can look for the same song elsewhere)
 
 ## Install
 
