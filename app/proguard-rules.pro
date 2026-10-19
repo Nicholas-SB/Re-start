@@ -6,3 +6,8 @@
 -keep class com.fasterxml.jackson.** { *; }
 -dontwarn com.fasterxml.jackson.**
 -dontwarn org.apache.commons.compress.**
+
+# Unpacking its Python on first use goes through Apache Commons Compress, which creates the
+# classes for zip "extra fields" by reflection. Optimized, they stopped being creatable and
+# the app crashed the first time the downloader started (For You, Start Mix, Download).
+-keep class org.apache.commons.compress.** { *; }
